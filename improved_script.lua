@@ -1,9 +1,9 @@
-local REQUIRED_GAME_ID = 134225461562780
-if game.GameId ~= REQUIRED_GAME_ID then
+local REQUIRED_PLACE_ID = 134225461562780
+if game.PlaceId ~= REQUIRED_PLACE_ID then
     warn(string.format(
-        "[NightFall] Wrong game. Required GameId %s, current GameId %s.",
-        tostring(REQUIRED_GAME_ID),
-        tostring(game.GameId)
+        "[NightFall] Wrong game. Required PlaceId %s, current PlaceId %s.",
+        tostring(REQUIRED_PLACE_ID),
+        tostring(game.PlaceId)
     ))
     return
 end
