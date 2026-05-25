@@ -17,7 +17,7 @@ local CONFIG = {
     JUNKIE_PROVIDER = "Mixed",
 
     -- Paste from Junkie dashboard after uploading the script (recommended for production)
-    JUNKIE_SCRIPT_URL = "",
+    JUNKIE_SCRIPT_URL = "https://api.jnkie.com/api/v1/luascripts/public/6184ece50b3bd7920c9c2ee296c7d9e3ec20db1d89c12d1882226c7533a8f910/download",
 
     GITHUB_SCRIPT_URL = "https://raw.githubusercontent.com/quarter67/NightFall/main/improved_script.lua?v=",
 
