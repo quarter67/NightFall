@@ -1,13 +1,3 @@
-local REQUIRED_PLACE_ID = 134225461562780
-if game.PlaceId ~= REQUIRED_PLACE_ID then
-    warn(string.format(
-        "[NightFall] Wrong game. Required PlaceId %s, current PlaceId %s.",
-        tostring(REQUIRED_PLACE_ID),
-        tostring(game.PlaceId)
-    ))
-    return
-end
-
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local CoreGui = game:GetService("CoreGui")
