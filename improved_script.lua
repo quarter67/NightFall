@@ -1,7 +1,3 @@
--- Script Hub Loader
--- Paste this ONE snippet into your executor and run it.
-
-return loadstring([[
 -- IMPROVED SCRIPT - Bug Fixes & Enhanced GUI
 -- TempV Scanner + Player ESP + Invisibility + Aimbot
 -- Optimized and cleaned up version
@@ -120,7 +116,7 @@ local function showKeyPrompt()
     title.Size = UDim2.new(1, -24, 0, 36)
     title.Position = UDim2.new(0, 12, 0, 12)
     title.BackgroundTransparency = 1
-    title.Text = "Script Hub · Key Required"
+    title.Text = "NightFall · Key Required"
     title.TextColor3 = COLORS.text
     title.Font = Enum.Font.GothamBold
     title.TextSize = 18
@@ -447,7 +443,7 @@ HubTitle.Name = "HubTitle"
 HubTitle.Size = UDim2.new(1, -50, 1, 0)
 HubTitle.Position = UDim2.new(0, 18, 0, 0)
 HubTitle.BackgroundTransparency = 1
-HubTitle.Text = "Script Hub"
+HubTitle.Text = "NightFall"
 HubTitle.TextColor3 = COLORS.text
 HubTitle.TextSize = 22
 HubTitle.Font = Enum.Font.GothamBold
@@ -521,17 +517,37 @@ bindConnection(UI.MobileAimBtn.InputEnded:Connect(function(input)
     end
 end))
 
+local TabScroll = Instance.new("ScrollingFrame")
+TabScroll.Name = "TabScroll"
+TabScroll.Size = UDim2.new(1, -24, 0, 38)
+TabScroll.Position = UDim2.new(0, 12, 0, 48)
+TabScroll.BackgroundTransparency = 1
+TabScroll.BorderSizePixel = 0
+TabScroll.ScrollBarThickness = 4
+TabScroll.ScrollBarImageColor3 = COLORS.textMuted
+TabScroll.ScrollingDirection = Enum.ScrollingDirection.X
+TabScroll.AutomaticCanvasSize = Enum.AutomaticSize.X
+TabScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+TabScroll.Parent = MainFrame
+
 local TabBar = Instance.new("Frame")
-TabBar.Size = UDim2.new(1, -24, 0, 38)
-TabBar.Position = UDim2.new(0, 12, 0, 48)
+TabBar.Name = "TabBar"
+TabBar.Size = UDim2.new(0, 0, 1, 0)
+TabBar.AutomaticSize = Enum.AutomaticSize.X
 TabBar.BackgroundTransparency = 1
-TabBar.Parent = MainFrame
+TabBar.Parent = TabScroll
 
 local TabLayout = Instance.new("UIListLayout")
 TabLayout.FillDirection = Enum.FillDirection.Horizontal
 TabLayout.Padding = UDim.new(0, 8)
-TabLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+TabLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
+TabLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+TabLayout.SortOrder = Enum.SortOrder.LayoutOrder
 TabLayout.Parent = TabBar
+
+TabLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+    TabBar.Size = UDim2.new(0, TabLayout.AbsoluteContentSize.X, 1, 0)
+end)
 
 local Content = Instance.new("Frame")
 Content.Size = UDim2.new(1, -24, 1, -100)
@@ -570,7 +586,7 @@ end
 
 local function createTab(name, icon)
     local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(0, 88, 0, 34)
+    btn.Size = UDim2.new(0, name == "Settings" and 96 or 88, 0, 34)
     btn.BackgroundColor3 = COLORS.bg
     btn.Text = ""
     btn.AutoButtonColor = false
@@ -3030,7 +3046,7 @@ end)
 
 end -- scope block (Luau local register limit)
 
-print("✅ Script Hub loaded")
+print("✅ NightFall loaded")
 if State.isMobile then
     print("📱 Mobile mode: hold the AIM button to aim")
 else
@@ -3038,5 +3054,3 @@ else
 end
 print("💡 Top-left cube toggles the GUI | Close button ejects the script")
 print("💡 Tabs: Scanner · Movement · Combat · Troll")
-
-]])()
