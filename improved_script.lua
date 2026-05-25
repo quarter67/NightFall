@@ -1,3 +1,11 @@
+do
+    local key = (typeof(getgenv) == "function" and getgenv().SCRIPT_KEY) or nil
+    if type(key) ~= "string" or key == "" then
+        warn("[NightFall] Use the official loader to enter your Junkie key.")
+        return
+    end
+end
+
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local CoreGui = game:GetService("CoreGui")
@@ -74,8 +82,6 @@ end
 
 local HttpService = game:GetService("HttpService")
 
-local PANDA_SERVICE = "nightfall"
-local PANDA_KEY_PATH = "ScriptHub/panda_key.txt"
 local AIM_POS_PATH = "ScriptHub/aim_btn_pos.txt"
 local TOGGLE_POS_PATH = "ScriptHub/toggle_pos.txt"
 local TOGGLE_SIZE_PATH = "ScriptHub/toggle_size.txt"
