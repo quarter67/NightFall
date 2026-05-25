@@ -3,18 +3,20 @@
     Share this file / loadstring — do NOT share improved_script.lua directly
 
     Dashboard setup:
-    1. Create a service named "nightfall" on jnkie.com
+    1. Service name + provider name must match Dashboard EXACTLY (case-sensitive)
     2. Set JUNKIE_IDENTIFIER to your dashboard user ID
-    3. Upload improved_script.lua to Junkie CDN and paste the download URL below
-       (or leave JUNKIE_SCRIPT_URL empty to load from GitHub after key check)
+    3. Create a Provider under Providers and link it to your service
+    4. Click Configure Link on your service
+    5. Upload improved_script.lua to Junkie CDN and paste the download URL below
 ]]
 
 local CONFIG = {
     REQUIRED_PLACE_ID = 134225461562780,
 
-    JUNKIE_SERVICE = "nightfall",
+    -- Must match Dashboard → Services → your service name exactly
+    JUNKIE_SERVICE = "NightFall",
     JUNKIE_IDENTIFIER = "1111611",
-    JUNKIE_PROVIDER = "Mixed",
+    JUNKIE_PROVIDER = "NightFall",
 
     -- Paste from Junkie dashboard after uploading the script (recommended for production)
     JUNKIE_SCRIPT_URL = "https://api.jnkie.com/api/v1/luascripts/public/6184ece50b3bd7920c9c2ee296c7d9e3ec20db1d89c12d1882226c7533a8f910/download",
@@ -327,8 +329,10 @@ local function createKeyUI(Junkie)
             end
         elseif err == "RATE_LIMITTED" or err == "RATE_LIMITED" then
             setStatus("Rate limited — wait ~5 minutes, then try Get Key again.", COLORS.danger)
+        elseif err then
+            setStatus("Get key failed: " .. tostring(err), COLORS.danger)
         else
-            setStatus("Could not get key link. Check your Junkie provider setup.", COLORS.danger)
+            setStatus("No provider/link configured. Set up Providers + Configure Link on Junkie.", COLORS.danger)
         end
     end)
 
