@@ -1,3 +1,13 @@
+local REQUIRED_GAME_ID = 134225461562780
+if game.GameId ~= REQUIRED_GAME_ID then
+    warn(string.format(
+        "[NightFall] Wrong game. Required GameId %s, current GameId %s.",
+        tostring(REQUIRED_GAME_ID),
+        tostring(game.GameId)
+    ))
+    return
+end
+
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local CoreGui = game:GetService("CoreGui")
