@@ -294,6 +294,7 @@ local function createKeyUI(Junkie)
     local resolvedKey = nil
     local done = false
     local attempts = 0
+    local cachedKeyLink = nil
 
     local function setStatus(text, color)
         status.Text = text
@@ -301,19 +302,33 @@ local function createKeyUI(Junkie)
     end
 
     getKeyBtn.MouseButton1Click:Connect(function()
-        local ok, link = pcall(function()
-            return Junkie.get_key_link()
+        if cachedKeyLink then
+            if setclipboard then
+                setclipboard(cachedKeyLink)
+                setStatus("Key link copied to clipboard (cached).", COLORS.success)
+            else
+                setStatus("Key link: " .. cachedKeyLink, COLORS.accentLight)
+            end
+            return
+        end
+
+        local link, err
+        local ok = pcall(function()
+            link, err = Junkie.get_key_link()
         end)
 
         if ok and link and link ~= "" then
+            cachedKeyLink = link
             if setclipboard then
                 setclipboard(link)
                 setStatus("Key link copied to clipboard.", COLORS.success)
             else
                 setStatus("Key link: " .. link, COLORS.accentLight)
             end
+        elseif err == "RATE_LIMITTED" or err == "RATE_LIMITED" then
+            setStatus("Rate limited — wait ~5 minutes, then try Get Key again.", COLORS.danger)
         else
-            setStatus("Please wait a few minutes before requesting another link.", COLORS.danger)
+            setStatus("Could not get key link. Check your Junkie provider setup.", COLORS.danger)
         end
     end)
 
