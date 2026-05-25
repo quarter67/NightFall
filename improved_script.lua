@@ -1,3 +1,7 @@
+-- Script Hub Loader
+-- Paste this ONE snippet into your executor and run it.
+
+return loadstring([[
 -- IMPROVED SCRIPT - Bug Fixes & Enhanced GUI
 -- TempV Scanner + Player ESP + Invisibility + Aimbot
 -- Optimized and cleaned up version
@@ -3034,3 +3038,5 @@ else
 end
 print("💡 Top-left cube toggles the GUI | Close button ejects the script")
 print("💡 Tabs: Scanner · Movement · Combat · Troll")
+
+]])()
