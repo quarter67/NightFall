@@ -1,12 +1,9 @@
--- IMPROVED SCRIPT - Bug Fixes & Enhanced GUI
--- TempV Scanner + Player ESP + Invisibility + Aimbot
--- Optimized and cleaned up version
-
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local CoreGui = game:GetService("CoreGui")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
 local CollectionService = game:GetService("CollectionService")
 local GuiService = game:GetService("GuiService")
 
@@ -25,23 +22,63 @@ local State = {
 }
 
 local COLORS = {
-    bg = Color3.fromRGB(36, 36, 40),
-    surface = Color3.fromRGB(54, 54, 58),
-    surfaceHover = Color3.fromRGB(64, 64, 68),
-    tabActive = Color3.fromRGB(196, 196, 201),
-    text = Color3.fromRGB(255, 255, 255),
-    textDark = Color3.fromRGB(28, 28, 32),
-    textMuted = Color3.fromRGB(160, 160, 168),
-    accent = Color3.fromRGB(90, 200, 140),
-    accentOn = Color3.fromRGB(70, 170, 255),
-    danger = Color3.fromRGB(210, 75, 75),
-    toggleCube = Color3.fromRGB(120, 90, 200),
+    bg = Color3.fromRGB(13, 14, 18),
+    sidebar = Color3.fromRGB(16, 17, 23),
+    surface = Color3.fromRGB(22, 24, 31),
+    surfaceHover = Color3.fromRGB(28, 30, 40),
+    elevated = Color3.fromRGB(34, 36, 46),
+    border = Color3.fromRGB(44, 46, 58),
+    tabActive = Color3.fromRGB(99, 102, 241),
+    tabActiveBg = Color3.fromRGB(28, 30, 48),
+    text = Color3.fromRGB(236, 237, 242),
+    textDark = Color3.fromRGB(255, 255, 255),
+    textMuted = Color3.fromRGB(128, 132, 150),
+    accent = Color3.fromRGB(99, 102, 241),
+    accentLight = Color3.fromRGB(129, 140, 248),
+    accentOn = Color3.fromRGB(56, 189, 248),
+    success = Color3.fromRGB(52, 211, 153),
+    danger = Color3.fromRGB(239, 68, 68),
+    toggleCube = Color3.fromRGB(99, 102, 241),
+    track = Color3.fromRGB(18, 19, 26),
+    toggleOff = Color3.fromRGB(55, 58, 72),
+    toggleOn = Color3.fromRGB(99, 102, 241),
 }
 
-local VALID_KEY = "QownsU"
-local SESSION_PATH = "ScriptHub/run_count.txt"
-local KEY_OK_PATH = "ScriptHub/key_ok.txt"
+local RADIUS = { sm = 6, md = 10, lg = 14, xl = 20 }
+local SIDEBAR_WIDTH = 132
+
+local function tween(instance, props, duration)
+    TweenService:Create(
+        instance,
+        TweenInfo.new(duration or 0.18, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
+        props
+    ):Play()
+end
+
+local function applyCorner(parent, radius)
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, radius or RADIUS.md)
+    corner.Parent = parent
+    return corner
+end
+
+local function applyStroke(parent, color, thickness, transparency)
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = color or COLORS.border
+    stroke.Thickness = thickness or 1
+    stroke.Transparency = transparency or 0.55
+    stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+    stroke.Parent = parent
+    return stroke
+end
+
+local HttpService = game:GetService("HttpService")
+
+local PANDA_SERVICE = "nightfall"
+local PANDA_KEY_PATH = "ScriptHub/panda_key.txt"
 local AIM_POS_PATH = "ScriptHub/aim_btn_pos.txt"
+local TOGGLE_POS_PATH = "ScriptHub/toggle_pos.txt"
+local TOGGLE_SIZE_PATH = "ScriptHub/toggle_size.txt"
 local TOGGLE_POS_PATH = "ScriptHub/toggle_pos.txt"
 local TOGGLE_SIZE_PATH = "ScriptHub/toggle_size.txt"
 
@@ -63,150 +100,6 @@ local function fsWrite(path, data)
             writefile(path, data)
         end
     end)
-end
-
-local function shouldPromptForKey()
-    if not fsRead(KEY_OK_PATH) then
-        return true
-    end
-    local count = tonumber(fsRead(SESSION_PATH)) or 0
-    return count >= 5
-end
-
-local function resetKeySessionCount()
-    fsWrite(SESSION_PATH, "0")
-    fsWrite(KEY_OK_PATH, "1")
-end
-
-local function incrementKeySessionCount()
-    local count = tonumber(fsRead(SESSION_PATH)) or 0
-    fsWrite(SESSION_PATH, tostring(count + 1))
-    fsWrite(KEY_OK_PATH, "1")
-end
-
-local function showKeyPrompt()
-    local accepted = false
-    local finished = false
-
-    local keyGui = Instance.new("ScreenGui")
-    keyGui.Name = "ScriptHubKey"
-    keyGui.ResetOnSpawn = false
-    keyGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-    keyGui.Parent = CoreGui
-
-    local backdrop = Instance.new("Frame")
-    backdrop.Size = UDim2.new(1, 0, 1, 0)
-    backdrop.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-    backdrop.BackgroundTransparency = 0.35
-    backdrop.BorderSizePixel = 0
-    backdrop.Parent = keyGui
-
-    local panel = Instance.new("Frame")
-    panel.Size = UDim2.new(0, 320, 0, 180)
-    panel.Position = UDim2.new(0.5, -160, 0.5, -90)
-    panel.BackgroundColor3 = COLORS.bg
-    panel.BorderSizePixel = 0
-    panel.Parent = keyGui
-
-    local panelCorner = Instance.new("UICorner")
-    panelCorner.CornerRadius = UDim.new(0, 12)
-    panelCorner.Parent = panel
-
-    local title = Instance.new("TextLabel")
-    title.Size = UDim2.new(1, -24, 0, 36)
-    title.Position = UDim2.new(0, 12, 0, 12)
-    title.BackgroundTransparency = 1
-    title.Text = "NightFall · Key Required"
-    title.TextColor3 = COLORS.text
-    title.Font = Enum.Font.GothamBold
-    title.TextSize = 18
-    title.TextXAlignment = Enum.TextXAlignment.Left
-    title.Parent = panel
-
-    local sub = Instance.new("TextLabel")
-    sub.Size = UDim2.new(1, -24, 0, 20)
-    sub.Position = UDim2.new(0, 12, 0, 44)
-    sub.BackgroundTransparency = 1
-    sub.Text = "Enter your key to continue"
-    sub.TextColor3 = COLORS.textMuted
-    sub.Font = Enum.Font.Gotham
-    sub.TextSize = 13
-    sub.TextXAlignment = Enum.TextXAlignment.Left
-    sub.Parent = panel
-
-    local box = Instance.new("TextBox")
-    box.Size = UDim2.new(1, -24, 0, 36)
-    box.Position = UDim2.new(0, 12, 0, 72)
-    box.BackgroundColor3 = COLORS.surface
-    box.TextColor3 = COLORS.text
-    box.PlaceholderText = "Key..."
-    box.PlaceholderColor3 = COLORS.textMuted
-    box.Font = Enum.Font.GothamSemibold
-    box.TextSize = 15
-    box.ClearTextOnFocus = false
-    box.Parent = panel
-
-    local boxCorner = Instance.new("UICorner")
-    boxCorner.CornerRadius = UDim.new(0, 8)
-    boxCorner.Parent = box
-
-    local err = Instance.new("TextLabel")
-    err.Size = UDim2.new(1, -24, 0, 16)
-    err.Position = UDim2.new(0, 12, 0, 112)
-    err.BackgroundTransparency = 1
-    err.Text = ""
-    err.TextColor3 = COLORS.danger
-    err.Font = Enum.Font.Gotham
-    err.TextSize = 12
-    err.TextXAlignment = Enum.TextXAlignment.Left
-    err.Parent = panel
-
-    local submit = Instance.new("TextButton")
-    submit.Size = UDim2.new(1, -24, 0, 36)
-    submit.Position = UDim2.new(0, 12, 0, 132)
-    submit.BackgroundColor3 = COLORS.accentOn
-    submit.Text = "Submit"
-    submit.TextColor3 = COLORS.text
-    submit.Font = Enum.Font.GothamBold
-    submit.TextSize = 15
-    submit.AutoButtonColor = false
-    submit.Parent = panel
-
-    local submitCorner = Instance.new("UICorner")
-    submitCorner.CornerRadius = UDim.new(0, 8)
-    submitCorner.Parent = submit
-
-    local function trySubmit()
-        if box.Text == VALID_KEY then
-            accepted = true
-            finished = true
-            resetKeySessionCount()
-        else
-            err.Text = "Invalid key"
-        end
-    end
-
-    submit.MouseButton1Click:Connect(trySubmit)
-    box.FocusLost:Connect(function(enter)
-        if enter then
-            trySubmit()
-        end
-    end)
-
-    while not finished do
-        task.wait()
-    end
-
-    keyGui:Destroy()
-    return accepted
-end
-
-if shouldPromptForKey() then
-    if not showKeyPrompt() then
-        return
-    end
-else
-    incrementKeySessionCount()
 end
 
 local function bindConnection(conn)
@@ -302,17 +195,17 @@ UI.ToggleCube = Instance.new("TextButton")
 UI.ToggleCube.Name = "ToggleCube"
 UI.ToggleCube.Size = UDim2.new(0, State.toggleCubeSize, 0, State.toggleCubeSize)
 UI.ToggleCube.Position = loadTogglePos()
-UI.ToggleCube.BackgroundColor3 = COLORS.toggleCube
+UI.ToggleCube.BackgroundColor3 = COLORS.elevated
 UI.ToggleCube.Text = ""
 UI.ToggleCube.AutoButtonColor = false
 UI.ToggleCube.Parent = UI.ToggleGui
 
 UI.ToggleCorner = Instance.new("UICorner")
-UI.ToggleCorner.CornerRadius = UDim.new(0, 8)
+UI.ToggleCorner.CornerRadius = UDim.new(0, 10)
 UI.ToggleCorner.Parent = UI.ToggleCube
 
 local ToggleStroke = Instance.new("UIStroke")
-ToggleStroke.Color = Color3.fromRGB(180, 150, 255)
+ToggleStroke.Color = COLORS.accent
 ToggleStroke.Thickness = 1.5
 ToggleStroke.Transparency = 0.35
 ToggleStroke.Parent = UI.ToggleCube
@@ -320,9 +213,9 @@ ToggleStroke.Parent = UI.ToggleCube
 UI.ToggleIcon = Instance.new("TextLabel")
 UI.ToggleIcon.Size = UDim2.new(1, 0, 1, 0)
 UI.ToggleIcon.BackgroundTransparency = 1
-UI.ToggleIcon.Text = "◆"
-UI.ToggleIcon.TextColor3 = COLORS.text
-UI.ToggleIcon.TextSize = 16
+UI.ToggleIcon.Text = "NF"
+UI.ToggleIcon.TextColor3 = COLORS.accentLight
+UI.ToggleIcon.TextSize = 14
 UI.ToggleIcon.Font = Enum.Font.GothamBold
 UI.ToggleIcon.Parent = UI.ToggleCube
 
@@ -345,8 +238,8 @@ UI.MobileAimBtn = Instance.new("TextButton")
 UI.MobileAimBtn.Name = "MobileAimButton"
 UI.MobileAimBtn.Size = UDim2.new(0, 72, 0, 72)
 UI.MobileAimBtn.Position = loadAimButtonPos()
-UI.MobileAimBtn.BackgroundColor3 = Color3.fromRGB(70, 170, 255)
-UI.MobileAimBtn.BackgroundTransparency = 0.15
+UI.MobileAimBtn.BackgroundColor3 = COLORS.accent
+UI.MobileAimBtn.BackgroundTransparency = 0.08
 UI.MobileAimBtn.Text = "AIM"
 UI.MobileAimBtn.TextColor3 = COLORS.text
 UI.MobileAimBtn.TextSize = 14
@@ -360,25 +253,60 @@ MobileAimCorner.CornerRadius = UDim.new(1, 0)
 MobileAimCorner.Parent = UI.MobileAimBtn
 
 local MobileAimStroke = Instance.new("UIStroke")
-MobileAimStroke.Color = COLORS.text
+MobileAimStroke.Color = COLORS.accentLight
 MobileAimStroke.Thickness = 2
-MobileAimStroke.Transparency = 0.4
+MobileAimStroke.Transparency = 0.35
 MobileAimStroke.Parent = UI.MobileAimBtn
 
 local mobileAimDragging = false
 local mobileAimDragStart, mobileAimStartPos
 
 local MainFrame = Instance.new("Frame")
-MainFrame.Size = UDim2.new(0, 500, 0, 560)
-MainFrame.Position = UDim2.new(0.5, -250, 0.5, -280)
-MainFrame.BackgroundColor3 = COLORS.bg
+MainFrame.Size = UDim2.new(0, 620, 0, 580)
+MainFrame.Position = UDim2.new(0.5, -310, 0.5, -290)
+MainFrame.BackgroundTransparency = 1
 MainFrame.BorderSizePixel = 0
-MainFrame.ClipsDescendants = true
+MainFrame.ClipsDescendants = false
+MainFrame.ZIndex = 2
 MainFrame.Parent = ScreenGui
+UI.MainFrame = MainFrame
 
-local MainCorner = Instance.new("UICorner")
-MainCorner.CornerRadius = UDim.new(0, 14)
-MainCorner.Parent = MainFrame
+local WindowBg = Instance.new("Frame")
+WindowBg.Name = "WindowBg"
+WindowBg.Size = UDim2.new(1, 0, 1, 0)
+WindowBg.BackgroundColor3 = COLORS.bg
+WindowBg.BorderSizePixel = 0
+WindowBg.ZIndex = 0
+WindowBg.Parent = MainFrame
+applyCorner(WindowBg, RADIUS.xl)
+applyStroke(WindowBg, COLORS.border, 1, 0.35)
+
+local MainShadow = Instance.new("Frame")
+MainShadow.Size = UDim2.new(0, 632, 0, 592)
+MainShadow.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+MainShadow.BackgroundTransparency = 0.6
+MainShadow.BorderSizePixel = 0
+MainShadow.ZIndex = 1
+MainShadow.Parent = ScreenGui
+applyCorner(MainShadow, RADIUS.xl + 2)
+UI.MainShadow = MainShadow
+
+local SHADOW_PAD = 6
+
+local function syncMainShadowPosition()
+    local pos = MainFrame.Position
+    MainShadow.Position = UDim2.new(
+        pos.X.Scale, pos.X.Offset - SHADOW_PAD,
+        pos.Y.Scale, pos.Y.Offset - SHADOW_PAD
+    )
+end
+
+local function setHubVisible(visible)
+    MainFrame.Visible = visible
+    MainShadow.Visible = visible
+end
+
+syncMainShadowPosition()
 
 local dragging = false
 local dragStart, startPos
@@ -407,6 +335,7 @@ bindConnection(UserInputService.InputChanged:Connect(function(input)
             startPos.X.Scale, startPos.X.Offset + delta.X,
             startPos.Y.Scale, startPos.Y.Offset + delta.Y
         )
+        syncMainShadowPosition()
     end
 
     if mobileAimDragging and State.mobileAimDragUnlocked
@@ -434,37 +363,68 @@ bindConnection(UserInputService.InputChanged:Connect(function(input)
 end))
 
 local Header = Instance.new("Frame")
-Header.Size = UDim2.new(1, 0, 0, 48)
-Header.BackgroundTransparency = 1
+Header.Size = UDim2.new(1, 0, 0, 52)
+Header.BackgroundColor3 = COLORS.bg
+Header.BorderSizePixel = 0
+Header.ZIndex = 2
 Header.Parent = MainFrame
+applyCorner(Header, RADIUS.xl)
+
+local HeaderLine = Instance.new("Frame")
+HeaderLine.Size = UDim2.new(1, 0, 0, 1)
+HeaderLine.Position = UDim2.new(0, 0, 1, -1)
+HeaderLine.BackgroundColor3 = COLORS.border
+HeaderLine.BorderSizePixel = 0
+HeaderLine.Parent = Header
+
+local HeaderAccent = Instance.new("Frame")
+HeaderAccent.Size = UDim2.new(0, 3, 0, 22)
+HeaderAccent.Position = UDim2.new(0, 16, 0.5, -11)
+HeaderAccent.BackgroundColor3 = COLORS.accent
+HeaderAccent.BorderSizePixel = 0
+HeaderAccent.Parent = Header
+applyCorner(HeaderAccent, 2)
 
 local HubTitle = Instance.new("TextLabel")
 HubTitle.Name = "HubTitle"
-HubTitle.Size = UDim2.new(1, -50, 1, 0)
-HubTitle.Position = UDim2.new(0, 18, 0, 0)
+HubTitle.Size = UDim2.new(0, 180, 0, 22)
+HubTitle.Position = UDim2.new(0, 28, 0, 10)
 HubTitle.BackgroundTransparency = 1
 HubTitle.Text = "NightFall"
 HubTitle.TextColor3 = COLORS.text
-HubTitle.TextSize = 22
+HubTitle.TextSize = 20
 HubTitle.Font = Enum.Font.GothamBold
 HubTitle.TextXAlignment = Enum.TextXAlignment.Left
 HubTitle.Parent = Header
 
+local HubSubtitle = Instance.new("TextLabel")
+HubSubtitle.Size = UDim2.new(0, 200, 0, 14)
+HubSubtitle.Position = UDim2.new(0, 28, 0, 32)
+HubSubtitle.BackgroundTransparency = 1
+HubSubtitle.Text = "Professional Script Hub"
+HubSubtitle.TextColor3 = COLORS.textMuted
+HubSubtitle.TextSize = 11
+HubSubtitle.Font = Enum.Font.GothamMedium
+HubSubtitle.TextXAlignment = Enum.TextXAlignment.Left
+HubSubtitle.Parent = Header
+
 UI.CloseBtn = Instance.new("TextButton")
 UI.CloseBtn.Size = UDim2.new(0, 32, 0, 32)
-UI.CloseBtn.Position = UDim2.new(1, -40, 0.5, -16)
-UI.CloseBtn.BackgroundTransparency = 1
+UI.CloseBtn.Position = UDim2.new(1, -44, 0.5, -16)
+UI.CloseBtn.BackgroundColor3 = COLORS.surface
 UI.CloseBtn.Text = "×"
 UI.CloseBtn.TextColor3 = COLORS.textMuted
-UI.CloseBtn.TextSize = 28
-UI.CloseBtn.Font = Enum.Font.Gotham
+UI.CloseBtn.TextSize = 22
+UI.CloseBtn.Font = Enum.Font.GothamMedium
+UI.CloseBtn.AutoButtonColor = false
 UI.CloseBtn.Parent = Header
+applyCorner(UI.CloseBtn, RADIUS.sm)
 
 UI.CloseBtn.MouseEnter:Connect(function()
-    UI.CloseBtn.TextColor3 = COLORS.danger
+    tween(UI.CloseBtn, { BackgroundColor3 = COLORS.danger, TextColor3 = COLORS.text })
 end)
 UI.CloseBtn.MouseLeave:Connect(function()
-    UI.CloseBtn.TextColor3 = COLORS.textMuted
+    tween(UI.CloseBtn, { BackgroundColor3 = COLORS.surface, TextColor3 = COLORS.textMuted })
 end)
 
 makeDraggable(MainFrame, Header)
@@ -485,7 +445,7 @@ bindConnection(UI.ToggleCube.InputEnded:Connect(function(input)
         if toggleDragging and toggleMoved then
             saveTogglePos(UI.ToggleCube.Position)
         elseif toggleDragging and not toggleMoved then
-            MainFrame.Visible = not MainFrame.Visible
+            setHubVisible(not MainFrame.Visible)
         end
         toggleDragging = false
     end
@@ -501,7 +461,7 @@ bindConnection(UI.MobileAimBtn.InputBegan:Connect(function(input)
         mobileAimStartPos = UI.MobileAimBtn.Position
     else
         State.holdingMobileAim = true
-        UI.MobileAimBtn.BackgroundColor3 = COLORS.accent
+        tween(UI.MobileAimBtn, { BackgroundColor3 = COLORS.success })
     end
 end))
 
@@ -513,48 +473,49 @@ bindConnection(UI.MobileAimBtn.InputEnded:Connect(function(input)
         saveAimButtonPos(UI.MobileAimBtn.Position)
     else
         State.holdingMobileAim = false
-        UI.MobileAimBtn.BackgroundColor3 = Color3.fromRGB(70, 170, 255)
+        tween(UI.MobileAimBtn, { BackgroundColor3 = COLORS.accent })
     end
 end))
 
-local TabScroll = Instance.new("ScrollingFrame")
-TabScroll.Name = "TabScroll"
-TabScroll.Size = UDim2.new(1, -24, 0, 38)
-TabScroll.Position = UDim2.new(0, 12, 0, 48)
-TabScroll.BackgroundTransparency = 1
-TabScroll.BorderSizePixel = 0
-TabScroll.ScrollBarThickness = 4
-TabScroll.ScrollBarImageColor3 = COLORS.textMuted
-TabScroll.ScrollingDirection = Enum.ScrollingDirection.X
-TabScroll.AutomaticCanvasSize = Enum.AutomaticSize.X
-TabScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
-TabScroll.Parent = MainFrame
+local Sidebar = Instance.new("Frame")
+Sidebar.Name = "Sidebar"
+Sidebar.Size = UDim2.new(0, SIDEBAR_WIDTH, 1, -52)
+Sidebar.Position = UDim2.new(0, 0, 0, 52)
+Sidebar.BackgroundColor3 = COLORS.sidebar
+Sidebar.BorderSizePixel = 0
+Sidebar.ZIndex = 2
+Sidebar.Parent = MainFrame
+applyCorner(Sidebar, RADIUS.xl)
 
-local TabBar = Instance.new("Frame")
-TabBar.Name = "TabBar"
-TabBar.Size = UDim2.new(0, 0, 1, 0)
-TabBar.AutomaticSize = Enum.AutomaticSize.X
-TabBar.BackgroundTransparency = 1
-TabBar.Parent = TabScroll
+local SidebarLine = Instance.new("Frame")
+SidebarLine.Size = UDim2.new(0, 1, 1, 0)
+SidebarLine.Position = UDim2.new(1, -1, 0, 0)
+SidebarLine.BackgroundColor3 = COLORS.border
+SidebarLine.BorderSizePixel = 0
+SidebarLine.Parent = Sidebar
 
-local TabLayout = Instance.new("UIListLayout")
-TabLayout.FillDirection = Enum.FillDirection.Horizontal
-TabLayout.Padding = UDim.new(0, 8)
-TabLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
-TabLayout.VerticalAlignment = Enum.VerticalAlignment.Center
-TabLayout.SortOrder = Enum.SortOrder.LayoutOrder
-TabLayout.Parent = TabBar
+local NavList = Instance.new("Frame")
+NavList.Name = "NavList"
+NavList.Size = UDim2.new(1, -12, 1, -16)
+NavList.Position = UDim2.new(0, 6, 0, 8)
+NavList.BackgroundTransparency = 1
+NavList.Parent = Sidebar
 
-TabLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-    TabBar.Size = UDim2.new(0, TabLayout.AbsoluteContentSize.X, 1, 0)
-end)
+local NavLayout = Instance.new("UIListLayout")
+NavLayout.Padding = UDim.new(0, 4)
+NavLayout.SortOrder = Enum.SortOrder.LayoutOrder
+NavLayout.Parent = NavList
 
 local Content = Instance.new("Frame")
-Content.Size = UDim2.new(1, -24, 1, -100)
-Content.Position = UDim2.new(0, 12, 0, 92)
-Content.BackgroundTransparency = 1
+Content.Size = UDim2.new(1, -(SIDEBAR_WIDTH + 20), 1, -68)
+Content.Position = UDim2.new(0, SIDEBAR_WIDTH + 10, 0, 58)
+Content.BackgroundColor3 = COLORS.bg
+Content.BackgroundTransparency = 0
+Content.BorderSizePixel = 0
 Content.ClipsDescendants = true
+Content.ZIndex = 2
 Content.Parent = MainFrame
+applyCorner(Content, RADIUS.xl)
 
 local pages = {}
 local tabButtons = {}
@@ -578,46 +539,68 @@ local function switchTab(name)
     end
     for tabName, data in pairs(tabButtons) do
         local selected = tabName == name
-        data.button.BackgroundColor3 = selected and COLORS.tabActive or COLORS.bg
-        data.label.TextColor3 = selected and COLORS.textDark or COLORS.text
-        data.icon.TextColor3 = selected and COLORS.textDark or COLORS.text
+        data.indicator.Visible = selected
+        tween(data.button, {
+            BackgroundColor3 = selected and COLORS.tabActiveBg or COLORS.sidebar,
+        })
+        data.label.TextColor3 = selected and COLORS.text or COLORS.textMuted
+        data.icon.TextColor3 = selected and COLORS.accentLight or COLORS.textMuted
     end
 end
 
 local function createTab(name, icon)
     local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(0, name == "Settings" and 96 or 88, 0, 34)
-    btn.BackgroundColor3 = COLORS.bg
+    btn.Size = UDim2.new(1, 0, 0, 40)
+    btn.BackgroundColor3 = COLORS.sidebar
     btn.Text = ""
     btn.AutoButtonColor = false
-    btn.Parent = TabBar
+    btn.Parent = NavList
+    applyCorner(btn, RADIUS.md)
 
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(1, 0)
-    corner.Parent = btn
+    local indicator = Instance.new("Frame")
+    indicator.Name = "Indicator"
+    indicator.Size = UDim2.new(0, 3, 0, 20)
+    indicator.Position = UDim2.new(0, 4, 0.5, -10)
+    indicator.BackgroundColor3 = COLORS.accent
+    indicator.BorderSizePixel = 0
+    indicator.Visible = false
+    indicator.Parent = btn
+    applyCorner(indicator, 2)
 
     local iconLabel = Instance.new("TextLabel")
-    iconLabel.Size = UDim2.new(0, 18, 1, 0)
-    iconLabel.Position = UDim2.new(0, 10, 0, 0)
+    iconLabel.Size = UDim2.new(0, 20, 1, 0)
+    iconLabel.Position = UDim2.new(0, 14, 0, 0)
     iconLabel.BackgroundTransparency = 1
     iconLabel.Text = icon
     iconLabel.TextSize = 14
     iconLabel.Font = Enum.Font.GothamBold
-    iconLabel.TextColor3 = COLORS.text
+    iconLabel.TextColor3 = COLORS.textMuted
     iconLabel.Parent = btn
 
     local textLabel = Instance.new("TextLabel")
-    textLabel.Size = UDim2.new(1, -32, 1, 0)
-    textLabel.Position = UDim2.new(0, 28, 0, 0)
+    textLabel.Size = UDim2.new(1, -38, 1, 0)
+    textLabel.Position = UDim2.new(0, 36, 0, 0)
     textLabel.BackgroundTransparency = 1
     textLabel.Text = name
-    textLabel.TextSize = 12
+    textLabel.TextSize = 13
     textLabel.Font = Enum.Font.GothamSemibold
-    textLabel.TextColor3 = COLORS.text
+    textLabel.TextColor3 = COLORS.textMuted
     textLabel.TextXAlignment = Enum.TextXAlignment.Left
     textLabel.Parent = btn
 
-    tabButtons[name] = {button = btn, label = textLabel, icon = iconLabel}
+    tabButtons[name] = { button = btn, label = textLabel, icon = iconLabel, indicator = indicator }
+
+    btn.MouseEnter:Connect(function()
+        if activeTab ~= name then
+            tween(btn, { BackgroundColor3 = COLORS.surface })
+        end
+    end)
+    btn.MouseLeave:Connect(function()
+        if activeTab ~= name then
+            tween(btn, { BackgroundColor3 = COLORS.sidebar })
+        end
+    end)
+
     btn.MouseButton1Click:Connect(function()
         switchTab(name)
     end)
@@ -625,24 +608,22 @@ end
 
 local function createHubButton(parent, title, subtitle)
     local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(1, 0, 0, 48)
+    btn.Size = UDim2.new(1, 0, 0, subtitle and 54 or 46)
     btn.BackgroundColor3 = COLORS.surface
     btn.Text = ""
     btn.AutoButtonColor = false
     btn.Parent = parent
-
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 10)
-    corner.Parent = btn
+    applyCorner(btn, RADIUS.md)
+    applyStroke(btn, COLORS.border, 1, 0.65)
 
     local titleLabel = Instance.new("TextLabel")
     titleLabel.Name = "TitleLabel"
-    titleLabel.Size = UDim2.new(1, -60, 0, 18)
-    titleLabel.Position = UDim2.new(0, 14, 0, subtitle and 8 or 15)
+    titleLabel.Size = UDim2.new(1, -110, 0, 18)
+    titleLabel.Position = UDim2.new(0, 14, 0, subtitle and 10 or 14)
     titleLabel.BackgroundTransparency = 1
     titleLabel.Text = title
     titleLabel.TextColor3 = COLORS.text
-    titleLabel.TextSize = 15
+    titleLabel.TextSize = 14
     titleLabel.Font = Enum.Font.GothamSemibold
     titleLabel.TextXAlignment = Enum.TextXAlignment.Left
     titleLabel.Parent = btn
@@ -650,35 +631,52 @@ local function createHubButton(parent, title, subtitle)
     if subtitle then
         local subLabel = Instance.new("TextLabel")
         subLabel.Name = "SubLabel"
-        subLabel.Size = UDim2.new(1, -60, 0, 14)
-        subLabel.Position = UDim2.new(0, 14, 0, 26)
+        subLabel.Size = UDim2.new(1, -110, 0, 14)
+        subLabel.Position = UDim2.new(0, 14, 0, 30)
         subLabel.BackgroundTransparency = 1
         subLabel.Text = subtitle
         subLabel.TextColor3 = COLORS.textMuted
-        subLabel.TextSize = 12
-        subLabel.Font = Enum.Font.Gotham
+        subLabel.TextSize = 11
+        subLabel.Font = Enum.Font.GothamMedium
         subLabel.TextXAlignment = Enum.TextXAlignment.Left
         subLabel.Parent = btn
     end
 
+    local switchTrack = Instance.new("Frame")
+    switchTrack.Name = "SwitchTrack"
+    switchTrack.Size = UDim2.new(0, 44, 0, 22)
+    switchTrack.Position = UDim2.new(1, -58, 0.5, -11)
+    switchTrack.BackgroundColor3 = COLORS.toggleOff
+    switchTrack.Visible = false
+    switchTrack.Parent = btn
+    applyCorner(switchTrack, RADIUS.full)
+
+    local switchKnob = Instance.new("Frame")
+    switchKnob.Name = "SwitchKnob"
+    switchKnob.Size = UDim2.new(0, 18, 0, 18)
+    switchKnob.Position = UDim2.new(0, 2, 0.5, -9)
+    switchKnob.BackgroundColor3 = COLORS.text
+    switchKnob.Parent = switchTrack
+    applyCorner(switchKnob, RADIUS.full)
+
     local stateLabel = Instance.new("TextLabel")
     stateLabel.Name = "StateLabel"
-    stateLabel.Size = UDim2.new(0, 40, 1, 0)
-    stateLabel.Position = UDim2.new(1, -48, 0, 0)
+    stateLabel.Size = UDim2.new(0, 72, 1, 0)
+    stateLabel.Position = UDim2.new(1, -82, 0, 0)
     stateLabel.BackgroundTransparency = 1
     stateLabel.Text = ""
     stateLabel.TextColor3 = COLORS.textMuted
-    stateLabel.TextSize = 13
+    stateLabel.TextSize = 12
     stateLabel.Font = Enum.Font.GothamBold
     stateLabel.TextXAlignment = Enum.TextXAlignment.Right
     stateLabel.Visible = false
     stateLabel.Parent = btn
 
     btn.MouseEnter:Connect(function()
-        btn.BackgroundColor3 = COLORS.surfaceHover
+        tween(btn, { BackgroundColor3 = COLORS.surfaceHover })
     end)
     btn.MouseLeave:Connect(function()
-        btn.BackgroundColor3 = COLORS.surface
+        tween(btn, { BackgroundColor3 = COLORS.surface })
     end)
 
     return btn
@@ -686,30 +684,48 @@ end
 
 local function setHubToggle(btn, enabled, onText, offText)
     local state = btn:FindFirstChild("StateLabel")
-    if state then
+    local track = btn:FindFirstChild("SwitchTrack")
+    local knob = track and track:FindFirstChild("SwitchKnob")
+
+    if onText or offText then
+        if track then track.Visible = false end
+        if state then
+            state.Visible = true
+            state.Text = enabled and (onText or "ON") or (offText or "OFF")
+            state.TextColor3 = enabled and COLORS.success or COLORS.textMuted
+        end
+        return
+    end
+
+    if track and knob then
+        track.Visible = true
+        if state then state.Visible = false end
+        tween(track, { BackgroundColor3 = enabled and COLORS.toggleOn or COLORS.toggleOff })
+        tween(knob, {
+            Position = enabled and UDim2.new(1, -20, 0.5, -9) or UDim2.new(0, 2, 0.5, -9),
+        })
+    elseif state then
         state.Visible = true
-        state.Text = enabled and (onText or "ON") or (offText or "OFF")
-        state.TextColor3 = enabled and COLORS.accent or COLORS.textMuted
+        state.Text = enabled and "ON" or "OFF"
+        state.TextColor3 = enabled and COLORS.success or COLORS.textMuted
     end
 end
 
 local function createHubSlider(parent, title, minVal, maxVal, defaultVal, onChanged)
     local container = Instance.new("Frame")
-    container.Size = UDim2.new(1, 0, 0, 62)
+    container.Size = UDim2.new(1, 0, 0, 68)
     container.BackgroundColor3 = COLORS.surface
     container.Parent = parent
-
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 10)
-    corner.Parent = container
+    applyCorner(container, RADIUS.md)
+    applyStroke(container, COLORS.border, 1, 0.65)
 
     local titleLabel = Instance.new("TextLabel")
     titleLabel.Size = UDim2.new(0.6, 0, 0, 22)
-    titleLabel.Position = UDim2.new(0, 14, 0, 8)
+    titleLabel.Position = UDim2.new(0, 14, 0, 10)
     titleLabel.BackgroundTransparency = 1
     titleLabel.Text = title
     titleLabel.TextColor3 = COLORS.text
-    titleLabel.TextSize = 14
+    titleLabel.TextSize = 13
     titleLabel.Font = Enum.Font.GothamSemibold
     titleLabel.TextXAlignment = Enum.TextXAlignment.Left
     titleLabel.Parent = container
@@ -717,38 +733,43 @@ local function createHubSlider(parent, title, minVal, maxVal, defaultVal, onChan
     local valueLabel = Instance.new("TextLabel")
     valueLabel.Name = "ValueLabel"
     valueLabel.Size = UDim2.new(0.4, -14, 0, 22)
-    valueLabel.Position = UDim2.new(0.6, 0, 0, 8)
+    valueLabel.Position = UDim2.new(0.6, 0, 0, 10)
     valueLabel.BackgroundTransparency = 1
     valueLabel.Text = tostring(defaultVal)
     valueLabel.TextColor3 = COLORS.accentOn
-    valueLabel.TextSize = 14
+    valueLabel.TextSize = 13
     valueLabel.Font = Enum.Font.GothamBold
     valueLabel.TextXAlignment = Enum.TextXAlignment.Right
     valueLabel.Parent = container
 
     local track = Instance.new("TextButton")
     track.Name = "Track"
-    track.Size = UDim2.new(1, -28, 0, 8)
-    track.Position = UDim2.new(0, 14, 0, 38)
-    track.BackgroundColor3 = Color3.fromRGB(30, 30, 34)
+    track.Size = UDim2.new(1, -28, 0, 6)
+    track.Position = UDim2.new(0, 14, 0, 44)
+    track.BackgroundColor3 = COLORS.track
     track.Text = ""
     track.AutoButtonColor = false
     track.Parent = container
-
-    local trackCorner = Instance.new("UICorner")
-    trackCorner.CornerRadius = UDim.new(1, 0)
-    trackCorner.Parent = track
+    applyCorner(track, RADIUS.full)
 
     local fill = Instance.new("Frame")
     fill.Name = "Fill"
     fill.Size = UDim2.new(0, 0, 1, 0)
-    fill.BackgroundColor3 = COLORS.accentOn
+    fill.BackgroundColor3 = COLORS.accent
     fill.BorderSizePixel = 0
     fill.Parent = track
+    applyCorner(fill, RADIUS.full)
 
-    local fillCorner = Instance.new("UICorner")
-    fillCorner.CornerRadius = UDim.new(1, 0)
-    fillCorner.Parent = fill
+    local knob = Instance.new("Frame")
+    knob.Name = "Knob"
+    knob.Size = UDim2.new(0, 14, 0, 14)
+    knob.Position = UDim2.new(0, -7, 0.5, -7)
+    knob.BackgroundColor3 = COLORS.text
+    knob.BorderSizePixel = 0
+    knob.ZIndex = 2
+    knob.Parent = track
+    applyCorner(knob, RADIUS.full)
+    applyStroke(knob, COLORS.accentLight, 1, 0.2)
 
     local current = defaultVal
     local draggingSlider = false
@@ -758,6 +779,7 @@ local function createHubSlider(parent, title, minVal, maxVal, defaultVal, onChan
         valueLabel.Text = tostring(current)
         local alpha = (current - minVal) / math.max(maxVal - minVal, 1)
         fill.Size = UDim2.new(alpha, 0, 1, 0)
+        knob.Position = UDim2.new(alpha, -7, 0.5, -7)
         if fireCallback and onChanged then
             onChanged(current)
         end
@@ -802,11 +824,149 @@ local function createHubSlider(parent, title, minVal, maxVal, defaultVal, onChan
     end
 end
 
+local function createHubTextInput(parent, title, placeholder, defaultText)
+    local container = Instance.new("Frame")
+    container.Size = UDim2.new(1, 0, 0, 68)
+    container.BackgroundColor3 = COLORS.surface
+    container.Parent = parent
+    applyCorner(container, RADIUS.md)
+    applyStroke(container, COLORS.border, 1, 0.65)
+
+    local titleLabel = Instance.new("TextLabel")
+    titleLabel.Size = UDim2.new(1, -28, 0, 22)
+    titleLabel.Position = UDim2.new(0, 14, 0, 10)
+    titleLabel.BackgroundTransparency = 1
+    titleLabel.Text = title
+    titleLabel.TextColor3 = COLORS.text
+    titleLabel.TextSize = 13
+    titleLabel.Font = Enum.Font.GothamSemibold
+    titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+    titleLabel.Parent = container
+
+    local box = Instance.new("TextBox")
+    box.Size = UDim2.new(1, -28, 0, 26)
+    box.Position = UDim2.new(0, 14, 0, 34)
+    box.BackgroundColor3 = COLORS.track
+    box.BorderSizePixel = 0
+    box.TextColor3 = COLORS.text
+    box.PlaceholderColor3 = COLORS.textMuted
+    box.PlaceholderText = placeholder or ""
+    box.Text = defaultText or ""
+    box.TextSize = 13
+    box.Font = Enum.Font.GothamMedium
+    box.ClearTextOnFocus = false
+    box.Parent = container
+    applyCorner(box, RADIUS.sm)
+    applyStroke(box, COLORS.border, 1, 0.7)
+
+    local boxPad = Instance.new("UIPadding")
+    boxPad.PaddingLeft = UDim.new(0, 10)
+    boxPad.PaddingRight = UDim.new(0, 10)
+    boxPad.Parent = box
+
+    return container, box
+end
+
+local function createMiscFold(parent, title, startExpanded)
+    local section = Instance.new("Frame")
+    section.Size = UDim2.new(1, 0, 0, 40)
+    section.BackgroundTransparency = 1
+    section.Parent = parent
+
+    local header = Instance.new("TextButton")
+    header.Size = UDim2.new(1, 0, 0, 40)
+    header.BackgroundColor3 = COLORS.surface
+    header.Text = ""
+    header.AutoButtonColor = false
+    header.Parent = section
+    applyCorner(header, RADIUS.md)
+    applyStroke(header, COLORS.border, 1, 0.65)
+
+    local accentBar = Instance.new("Frame")
+    accentBar.Size = UDim2.new(0, 3, 0, 18)
+    accentBar.Position = UDim2.new(0, 10, 0.5, -9)
+    accentBar.BackgroundColor3 = COLORS.accent
+    accentBar.BorderSizePixel = 0
+    accentBar.Parent = header
+    applyCorner(accentBar, 2)
+
+    local titleLabel = Instance.new("TextLabel")
+    titleLabel.Size = UDim2.new(1, -52, 1, 0)
+    titleLabel.Position = UDim2.new(0, 20, 0, 0)
+    titleLabel.BackgroundTransparency = 1
+    titleLabel.Text = title
+    titleLabel.TextColor3 = COLORS.text
+    titleLabel.Font = Enum.Font.GothamBold
+    titleLabel.TextSize = 14
+    titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+    titleLabel.Parent = header
+
+    local arrow = Instance.new("TextLabel")
+    arrow.Name = "Arrow"
+    arrow.Size = UDim2.new(0, 24, 1, 0)
+    arrow.Position = UDim2.new(1, -32, 0, 0)
+    arrow.BackgroundTransparency = 1
+    arrow.Text = "▸"
+    arrow.TextColor3 = COLORS.textMuted
+    arrow.TextSize = 14
+    arrow.Font = Enum.Font.GothamBold
+    arrow.Parent = header
+
+    local body = Instance.new("Frame")
+    body.Name = "Body"
+    body.Size = UDim2.new(1, 0, 0, 0)
+    body.Position = UDim2.new(0, 0, 0, 44)
+    body.BackgroundTransparency = 1
+    body.ClipsDescendants = true
+    body.Parent = section
+
+    local bodyLayout = Instance.new("UIListLayout")
+    bodyLayout.Padding = UDim.new(0, 8)
+    bodyLayout.Parent = body
+
+    local expanded = startExpanded == true
+
+    local function refreshSectionSize()
+        local bodyHeight = expanded and bodyLayout.AbsoluteContentSize.Y or 0
+        body.Size = UDim2.new(1, 0, 0, bodyHeight)
+        section.Size = UDim2.new(1, 0, 0, 40 + (expanded and bodyHeight + 4 or 0))
+    end
+
+    bodyLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(refreshSectionSize)
+
+    local function setExpanded(value)
+        expanded = value
+        arrow.Text = expanded and "▾" or "▸"
+        for _, child in ipairs(body:GetChildren()) do
+            if not child:IsA("UIListLayout") then
+                child.Visible = expanded
+            end
+        end
+        refreshSectionSize()
+    end
+
+    header.MouseButton1Click:Connect(function()
+        setExpanded(not expanded)
+    end)
+
+    header.MouseEnter:Connect(function()
+        tween(header, { BackgroundColor3 = COLORS.surfaceHover })
+    end)
+    header.MouseLeave:Connect(function()
+        tween(header, { BackgroundColor3 = COLORS.surface })
+    end)
+
+    setExpanded(expanded)
+
+    return section, body
+end
+
 createTab("Home", "⌂")
 createTab("Scanner", "◉")
 createTab("Movement", "↗")
 createTab("Combat", "⚡")
 createTab("Troll", "☠")
+createTab("Misc", "◔")
 createTab("Settings", "⚙")
 
 do
@@ -816,6 +976,7 @@ local ScannerPage = createPage("Scanner")
 local MovementPage = createPage("Movement")
 local CombatPage = createPage("Combat")
 local TrollPage = createPage("Troll")
+local MiscPage = createPage("Misc")
 local SettingsPage = createPage("Settings")
 
 State.walkSpeed = 16
@@ -826,44 +987,53 @@ State.speedEnabled = false
 State.jumpEnabled = false
 State.flightEnabled = false
 State.noclipEnabled = false
+State.flingInProgress = false
 State.infJumpEnabled = false
 State.flightSpeed = 80
 State.hookedHumanoids = {}
 
 local HomeCard = Instance.new("Frame")
-HomeCard.Size = UDim2.new(1, 0, 0, 120)
+HomeCard.Size = UDim2.new(1, 0, 0, 128)
 HomeCard.BackgroundColor3 = COLORS.surface
 HomeCard.Parent = HomePage
-local HomeCardCorner = Instance.new("UICorner")
-HomeCardCorner.CornerRadius = UDim.new(0, 12)
-HomeCardCorner.Parent = HomeCard
+applyCorner(HomeCard, RADIUS.lg)
+applyStroke(HomeCard, COLORS.border, 1, 0.6)
+
+local HomeCardAccent = Instance.new("Frame")
+HomeCardAccent.Size = UDim2.new(0, 4, 1, -20)
+HomeCardAccent.Position = UDim2.new(0, 0, 0, 10)
+HomeCardAccent.BackgroundColor3 = COLORS.accent
+HomeCardAccent.BorderSizePixel = 0
+HomeCardAccent.Parent = HomeCard
+applyCorner(HomeCardAccent, 2)
 
 local WelcomeText = Instance.new("TextLabel")
-WelcomeText.Size = UDim2.new(1, -24, 0, 28)
-WelcomeText.Position = UDim2.new(0, 14, 0, 14)
+WelcomeText.Size = UDim2.new(1, -28, 0, 28)
+WelcomeText.Position = UDim2.new(0, 18, 0, 16)
 WelcomeText.BackgroundTransparency = 1
 WelcomeText.Text = "Welcome back, " .. player.DisplayName
 WelcomeText.TextColor3 = COLORS.text
-WelcomeText.TextSize = 20
+WelcomeText.TextSize = 19
 WelcomeText.Font = Enum.Font.GothamBold
 WelcomeText.TextXAlignment = Enum.TextXAlignment.Left
 WelcomeText.Parent = HomeCard
 
 local HomeSubText = Instance.new("TextLabel")
-HomeSubText.Size = UDim2.new(1, -24, 0, 40)
-HomeSubText.Position = UDim2.new(0, 14, 0, 44)
+HomeSubText.Size = UDim2.new(1, -28, 0, 44)
+HomeSubText.Position = UDim2.new(0, 18, 0, 48)
 HomeSubText.BackgroundTransparency = 1
-HomeSubText.Text = "TempV scanner, combat tools,\nmovement hacks & troll features."
+HomeSubText.Text = "TempV scanner, combat tools, movement hacks & troll features — all in one hub."
 HomeSubText.TextColor3 = COLORS.textMuted
-HomeSubText.TextSize = 13
-HomeSubText.Font = Enum.Font.Gotham
+HomeSubText.TextSize = 12
+HomeSubText.Font = Enum.Font.GothamMedium
 HomeSubText.TextXAlignment = Enum.TextXAlignment.Left
 HomeSubText.TextYAlignment = Enum.TextYAlignment.Top
+HomeSubText.TextWrapped = true
 HomeSubText.Parent = HomeCard
 
 local HomeList = Instance.new("Frame")
-HomeList.Size = UDim2.new(1, 0, 1, -132)
-HomeList.Position = UDim2.new(0, 0, 0, 132)
+HomeList.Size = UDim2.new(1, 0, 1, -140)
+HomeList.Position = UDim2.new(0, 0, 0, 140)
 HomeList.BackgroundTransparency = 1
 HomeList.Parent = HomePage
 
@@ -897,21 +1067,21 @@ local ScannerScroll = Instance.new("ScrollingFrame")
 ScannerScroll.Size = UDim2.new(1, 0, 1, -168)
 ScannerScroll.BackgroundColor3 = COLORS.surface
 ScannerScroll.BorderSizePixel = 0
-ScannerScroll.ScrollBarThickness = 5
-ScannerScroll.ScrollBarImageColor3 = COLORS.textMuted
+ScannerScroll.ScrollBarThickness = 4
+ScannerScroll.ScrollBarImageColor3 = COLORS.border
 ScannerScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
 ScannerScroll.Parent = ScannerPage
-
-local ScannerScrollCorner = Instance.new("UICorner")
-ScannerScrollCorner.CornerRadius = UDim.new(0, 12)
-ScannerScrollCorner.Parent = ScannerScroll
+applyCorner(ScannerScroll, RADIUS.lg)
+applyStroke(ScannerScroll, COLORS.border, 1, 0.65)
 
 local Scroll = ScannerScroll
+UI.ScannerScroll = Scroll
 
 local UIList = Instance.new("UIListLayout")
 UIList.SortOrder = Enum.SortOrder.LayoutOrder
 UIList.Padding = UDim.new(0, 6)
 UIList.Parent = Scroll
+UI.ScannerUIList = UIList
 
 local UIPadding = Instance.new("UIPadding")
 UIPadding.PaddingTop = UDim.new(0, 8)
@@ -943,7 +1113,7 @@ MovementScroll.Size = UDim2.new(1, 0, 1, 0)
 MovementScroll.BackgroundTransparency = 1
 MovementScroll.BorderSizePixel = 0
 MovementScroll.ScrollBarThickness = 5
-MovementScroll.ScrollBarImageColor3 = COLORS.textMuted
+MovementScroll.ScrollBarImageColor3 = COLORS.border
 MovementScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
 MovementScroll.Parent = MovementPage
 
@@ -991,7 +1161,7 @@ CombatScroll.Size = UDim2.new(1, 0, 1, 0)
 CombatScroll.BackgroundTransparency = 1
 CombatScroll.BorderSizePixel = 0
 CombatScroll.ScrollBarThickness = 5
-CombatScroll.ScrollBarImageColor3 = COLORS.textMuted
+CombatScroll.ScrollBarImageColor3 = COLORS.border
 CombatScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
 CombatScroll.Parent = CombatPage
 
@@ -1028,12 +1198,15 @@ UI.TeleportSafeZoneBtn = createHubButton(CombatList, "Teleport To Safe Zone", "I
 
 UI.ClearESPBtn = createHubButton(CombatList, "Clear All ESP", "Remove highlights & billboards")
 
+UI.BloodManipToggle = createHubButton(CombatList, "Blood Manipulator Kill", "Hold E on head · stays locked until release")
+setHubToggle(UI.BloodManipToggle, false)
+
 local TrollScroll = Instance.new("ScrollingFrame")
 TrollScroll.Size = UDim2.new(1, 0, 1, 0)
 TrollScroll.BackgroundTransparency = 1
 TrollScroll.BorderSizePixel = 0
 TrollScroll.ScrollBarThickness = 5
-TrollScroll.ScrollBarImageColor3 = COLORS.textMuted
+TrollScroll.ScrollBarImageColor3 = COLORS.border
 TrollScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
 TrollScroll.Parent = TrollPage
 
@@ -1054,10 +1227,10 @@ end)
 UI.SpinToggle = createHubButton(TrollList, "Spin Bot", "Spin your character constantly")
 setHubToggle(UI.SpinToggle, false)
 
-UI.DesyncToggle = createHubButton(TrollList, "Desync", "Hide from others · keeps your spot when off · touch doors")
+UI.DesyncToggle = createHubButton(TrollList, "Desync", "Server marker + client label · hold E to interact")
 setHubToggle(UI.DesyncToggle, false)
 
-UI.FlingHomelanderBtn = createHubButton(TrollList, "Fling Homelander", "TP into them & launch")
+UI.FlingHomelanderBtn = createHubButton(TrollList, "Fling Homelander", "SkidFling overlap · needs collision")
 
 UI.FlingSelfBtn = createHubButton(TrollList, "Fling Self", "Launch yourself into the air")
 
@@ -1069,12 +1242,122 @@ UI.AnnoySoundBtn = createHubButton(TrollList, "Play Loud Sound", "Play an annoyi
 
 UI.ResetTrollBtn = createHubButton(TrollList, "Reset Troll Effects", "Turn off spin & desync")
 
+local MiscScroll = Instance.new("ScrollingFrame")
+MiscScroll.Size = UDim2.new(1, 0, 1, 0)
+MiscScroll.BackgroundTransparency = 1
+MiscScroll.BorderSizePixel = 0
+MiscScroll.ScrollBarThickness = 5
+MiscScroll.ScrollBarImageColor3 = COLORS.border
+MiscScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+MiscScroll.Parent = MiscPage
+
+local MiscList = Instance.new("Frame")
+MiscList.Size = UDim2.new(1, 0, 0, 200)
+MiscList.BackgroundTransparency = 1
+MiscList.Parent = MiscScroll
+
+local MiscLayout = Instance.new("UIListLayout")
+MiscLayout.Padding = UDim.new(0, 8)
+MiscLayout.Parent = MiscList
+
+MiscLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+    MiscList.Size = UDim2.new(1, 0, 0, MiscLayout.AbsoluteContentSize.Y)
+    MiscScroll.CanvasSize = UDim2.new(0, 0, 0, MiscLayout.AbsoluteContentSize.Y + 8)
+end)
+
+local _, SpectateBody = createMiscFold(MiscList, "Spectate", true)
+
+local MiscSubLabel = Instance.new("TextLabel")
+MiscSubLabel.Size = UDim2.new(1, 0, 0, 18)
+MiscSubLabel.BackgroundTransparency = 1
+MiscSubLabel.Text = "Select a player below · spectate or fling"
+MiscSubLabel.TextColor3 = COLORS.textMuted
+MiscSubLabel.TextSize = 12
+MiscSubLabel.Font = Enum.Font.GothamMedium
+MiscSubLabel.TextXAlignment = Enum.TextXAlignment.Left
+MiscSubLabel.Parent = SpectateBody
+
+UI.SpectateSelectedLabel = Instance.new("TextLabel")
+UI.SpectateSelectedLabel.Size = UDim2.new(1, 0, 0, 32)
+UI.SpectateSelectedLabel.BackgroundColor3 = COLORS.elevated
+UI.SpectateSelectedLabel.Text = "Selected: None"
+UI.SpectateSelectedLabel.TextColor3 = COLORS.textMuted
+UI.SpectateSelectedLabel.TextSize = 12
+UI.SpectateSelectedLabel.Font = Enum.Font.GothamSemibold
+UI.SpectateSelectedLabel.TextXAlignment = Enum.TextXAlignment.Left
+UI.SpectateSelectedLabel.Parent = SpectateBody
+applyCorner(UI.SpectateSelectedLabel, RADIUS.md)
+applyStroke(UI.SpectateSelectedLabel, COLORS.border, 1, 0.7)
+
+local SpectateSelectedPad = Instance.new("UIPadding")
+SpectateSelectedPad.PaddingLeft = UDim.new(0, 12)
+SpectateSelectedPad.Parent = UI.SpectateSelectedLabel
+
+UI.SpectatePlayerScroll = Instance.new("ScrollingFrame")
+UI.SpectatePlayerScroll.Size = UDim2.new(1, 0, 0, 180)
+UI.SpectatePlayerScroll.BackgroundColor3 = COLORS.surface
+UI.SpectatePlayerScroll.BorderSizePixel = 0
+UI.SpectatePlayerScroll.ScrollBarThickness = 4
+UI.SpectatePlayerScroll.ScrollBarImageColor3 = COLORS.border
+UI.SpectatePlayerScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+UI.SpectatePlayerScroll.Parent = SpectateBody
+applyCorner(UI.SpectatePlayerScroll, RADIUS.md)
+applyStroke(UI.SpectatePlayerScroll, COLORS.border, 1, 0.65)
+
+UI.SpectatePlayerList = Instance.new("Frame")
+UI.SpectatePlayerList.Size = UDim2.new(1, -12, 0, 0)
+UI.SpectatePlayerList.Position = UDim2.new(0, 6, 0, 6)
+UI.SpectatePlayerList.BackgroundTransparency = 1
+UI.SpectatePlayerList.Parent = UI.SpectatePlayerScroll
+
+local SpectatePlayerLayout = Instance.new("UIListLayout")
+SpectatePlayerLayout.Padding = UDim.new(0, 6)
+SpectatePlayerLayout.Parent = UI.SpectatePlayerList
+
+SpectatePlayerLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+    UI.SpectatePlayerList.Size = UDim2.new(1, -12, 0, SpectatePlayerLayout.AbsoluteContentSize.Y)
+    UI.SpectatePlayerScroll.CanvasSize = UDim2.new(0, 0, 0, SpectatePlayerLayout.AbsoluteContentSize.Y + 12)
+end)
+
+UI.RefreshSpectateListBtn = createHubButton(SpectateBody, "Refresh Player List", "Update online players")
+UI.SpectateBtn = createHubButton(SpectateBody, "Spectate", "Right-drag orbit · scroll zoom")
+UI.StopSpectateBtn = createHubButton(SpectateBody, "Stop Spectate", "Return camera to you")
+
+local _, FlingBody = createMiscFold(MiscList, "Fling", false)
+
+UI.FlingSelectedBtn = createHubButton(FlingBody, "Fling Selected", "SkidFling · turn off noclip/desync first")
+
+local _, FreecamBody = createMiscFold(MiscList, "Freecam", false)
+
+UI.FreecamToggle = createHubButton(FreecamBody, "Freecam", "WASD move · right-drag look · scroll speed")
+setHubToggle(UI.FreecamToggle, false)
+
+UI.FreecamSpeedSlider, UI.setFreecamSpeedSliderValue = createHubSlider(
+    FreecamBody,
+    "Freecam Speed",
+    20,
+    250,
+    80,
+    function(value)
+        State.freecamSpeed = value
+    end
+)
+
+local _, EffectsBody = createMiscFold(MiscList, "Effects", false)
+
+UI.RemoveBloodManipEffectsToggle = createHubButton(
+    EffectsBody,
+    "Remove Blood Manipulator Effects",
+    "Blocks red screen overlay & forced zoom"
+)
+setHubToggle(UI.RemoveBloodManipEffectsToggle, false)
+
 local SettingsScroll = Instance.new("ScrollingFrame")
 SettingsScroll.Size = UDim2.new(1, 0, 1, 0)
 SettingsScroll.BackgroundTransparency = 1
 SettingsScroll.BorderSizePixel = 0
 SettingsScroll.ScrollBarThickness = 5
-SettingsScroll.ScrollBarImageColor3 = COLORS.textMuted
+SettingsScroll.ScrollBarImageColor3 = COLORS.border
 SettingsScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
 SettingsScroll.Parent = SettingsPage
 
@@ -1105,6 +1388,13 @@ UI.ToggleSizeSlider, UI.setToggleSizeSliderValue = createHubSlider(
 
 UI.ResetTogglePosBtn = createHubButton(SettingsList, "Reset Toggle Position", "Move cube back to top-left")
 
+UI.SwappedMouseToggle = createHubButton(
+    SettingsList,
+    "Right-Click Primary Mouse",
+    "Use if your mouse buttons are swapped"
+)
+setHubToggle(UI.SwappedMouseToggle, true)
+
 switchTab("Home")
 
 State.autoRefreshEnabled = true
@@ -1120,6 +1410,50 @@ State.desyncClientCFrame = nil
 State.desyncServerCFrame = nil
 State.desyncRenderBound = false
 State.desyncPositionHoldConnection = nil
+State.desyncVisualFolder = nil
+State.desyncServerMarker = nil
+State.desyncServerBillboard = nil
+State.desyncClientBillboard = nil
+State.desyncClientHighlight = nil
+
+State.spectateTarget = nil
+State.spectating = false
+State.spectateConnections = {}
+State.spectateSavedCameraType = nil
+State.spectateSavedCameraSubject = nil
+State.spectateFollowDistance = 18
+State.spectateYaw = 0
+State.spectatePitch = 20
+
+State.freecamEnabled = false
+State.freecamLooking = false
+State.freecamSpeed = 80
+State.freecamCFrame = nil
+State.freecamYaw = 0
+State.freecamPitch = 0
+State.cameraDragDelta = Vector2.zero
+State.cameraSavedType = nil
+State.cameraSavedSubject = nil
+State.cameraSavedMaxZoom = nil
+State.cameraSavedMinZoom = nil
+
+State.bloodManipEnabled = false
+State.holdingBloodManipKey = false
+State.bloodManipTarget = nil
+State.bloodManipHighlight = nil
+State.bloodManipLockPos = nil
+State.bloodManipWalkAwayStart = nil
+State.bloodManipExecuting = false
+State.removeBloodManipEffects = false
+State.bloodEffectSavedFov = 70
+State.bloodEffectSavedMaxZoom = 128
+State.bloodEffectSavedMinZoom = 0.5
+State.bloodEffectBlockConnections = {}
+State.bloodEffectTracked = {}
+State.bloodEffectRestoringCamera = false
+State.swappedMouseButtons = true
+State.spectateOrbiting = false
+State.cameraMouseLocked = false
 
 State.highlights = {}
 State.billboards = {}
@@ -1192,7 +1526,6 @@ local SCRIPT_GUI_NAMES = {
     ScriptHub = true,
     ScriptHubToggle = true,
     ScriptHubMobileAim = true,
-    ScriptHubKey = true,
 }
 
 local function isScriptOwnedGui(obj)
@@ -1688,11 +2021,10 @@ local function applyDesyncTouchInterest(character)
         if part:IsA("BasePart") then
             ensurePartTouchInterest(part)
 
-            if part.Name ~= "HumanoidRootPart" then
-                pcall(function()
-                    sethiddenproperty(part, "NetworkIsSleeping", false)
-                end)
-            end
+            pcall(function()
+                part.CanCollide = true
+                sethiddenproperty(part, "NetworkIsSleeping", part.Name ~= "HumanoidRootPart")
+            end)
         end
     end
 end
@@ -1706,19 +2038,258 @@ local function bindDesyncTouchInterest(character)
         if not State.desyncEnabled then return end
         if desc:IsA("BasePart") then
             ensurePartTouchInterest(desc)
-            if desc.Name ~= "HumanoidRootPart" then
-                pcall(function()
-                    sethiddenproperty(desc, "NetworkIsSleeping", false)
-                end)
-            end
+            pcall(function()
+                desc.CanCollide = true
+                sethiddenproperty(desc, "NetworkIsSleeping", desc.Name ~= "HumanoidRootPart")
+            end)
         end
     end))
+end
+
+local function createDesyncBillboard(adornee, text, textColor, offset, guiParent)
+    local billboard = Instance.new("BillboardGui")
+    billboard.Name = "NightFallDesyncLabel"
+    billboard.Size = UDim2.new(0, 220, 0, 44)
+    billboard.StudsOffset = offset or Vector3.new(0, 3, 0)
+    billboard.AlwaysOnTop = true
+    billboard.ResetOnSpawn = false
+    if adornee then
+        billboard.Adornee = adornee
+    end
+    billboard.Parent = guiParent or CoreGui
+
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(1, 0, 1, 0)
+    label.BackgroundTransparency = 0.25
+    label.BackgroundColor3 = Color3.fromRGB(20, 20, 24)
+    label.Text = text
+    label.TextColor3 = textColor
+    label.TextStrokeTransparency = 0.35
+    label.Font = Enum.Font.GothamBold
+    label.TextSize = 15
+    label.Parent = billboard
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 8)
+    corner.Parent = label
+
+    return billboard, label
+end
+
+local function cleanupDesyncVisuals()
+    pcall(function()
+        if State.desyncClientBillboard then
+            State.desyncClientBillboard:Destroy()
+        end
+    end)
+    pcall(function()
+        if State.desyncClientHighlight then
+            State.desyncClientHighlight:Destroy()
+        end
+    end)
+    pcall(function()
+        if State.desyncServerBillboard then
+            State.desyncServerBillboard:Destroy()
+        end
+    end)
+
+    if State.desyncVisualFolder then
+        pcall(function()
+            State.desyncVisualFolder:Destroy()
+        end)
+    end
+
+    pcall(function()
+        if player.Character then
+            for _, desc in ipairs(player.Character:GetDescendants()) do
+                if desc:IsA("BillboardGui") and desc.Name == "NightFallDesyncLabel" then
+                    desc:Destroy()
+                end
+            end
+        end
+        for _, desc in ipairs(CoreGui:GetChildren()) do
+            if desc:IsA("BillboardGui") and desc.Name == "NightFallDesyncLabel" then
+                desc:Destroy()
+            end
+        end
+    end)
+
+    State.desyncVisualFolder = nil
+    State.desyncServerMarker = nil
+    State.desyncServerBillboard = nil
+    State.desyncClientBillboard = nil
+    State.desyncClientHighlight = nil
+end
+
+local function setupDesyncVisuals(serverCFrame)
+    cleanupDesyncVisuals()
+
+    local folder = Instance.new("Folder")
+    folder.Name = "ScriptHubDesyncVisuals"
+    folder:SetAttribute("ScriptHubESP", true)
+    folder.Parent = Workspace
+    State.desyncVisualFolder = folder
+
+    local marker = Instance.new("Part")
+    marker.Name = "ServerPositionMarker"
+    marker.Size = Vector3.new(2.2, 5.2, 2.2)
+    marker.Anchored = true
+    marker.CanCollide = false
+    marker.CanTouch = false
+    marker.CanQuery = false
+    marker.Material = Enum.Material.Neon
+    marker.Color = Color3.fromRGB(255, 85, 85)
+    marker.Transparency = 0.55
+    marker.CFrame = serverCFrame
+    marker.Parent = folder
+    State.desyncServerMarker = marker
+
+    local markerHighlight = Instance.new("Highlight")
+    markerHighlight.Adornee = marker
+    markerHighlight.FillColor = Color3.fromRGB(255, 70, 70)
+    markerHighlight.OutlineColor = Color3.fromRGB(255, 180, 180)
+    markerHighlight.FillTransparency = 0.35
+    markerHighlight.OutlineTransparency = 0
+    markerHighlight.Parent = folder
+
+    State.desyncServerBillboard = createDesyncBillboard(
+        marker,
+        "SERVER POSITION",
+        Color3.fromRGB(255, 120, 120),
+        Vector3.new(0, 3.4, 0),
+        folder
+    )
+
+    local character = player.Character
+    if character then
+        State.desyncClientHighlight = Instance.new("Highlight")
+        State.desyncClientHighlight.Adornee = character
+        State.desyncClientHighlight.FillColor = Color3.fromRGB(80, 180, 255)
+        State.desyncClientHighlight.OutlineColor = Color3.fromRGB(150, 220, 255)
+        State.desyncClientHighlight.FillTransparency = 0.55
+        State.desyncClientHighlight.OutlineTransparency = 0
+        State.desyncClientHighlight.Parent = folder
+
+        local adornee = character:FindFirstChild("Head") or character:FindFirstChild("HumanoidRootPart")
+        if adornee then
+            State.desyncClientBillboard = createDesyncBillboard(
+                adornee,
+                "CLIENT POSITION",
+                Color3.fromRGB(120, 210, 255),
+                Vector3.new(0, 2.8, 0),
+                folder
+            )
+        end
+    end
+end
+
+local function updateDesyncVisuals()
+    if not State.desyncEnabled then return end
+
+    if State.desyncServerMarker and State.desyncServerCFrame then
+        pcall(function()
+            State.desyncServerMarker.CFrame = State.desyncServerCFrame
+        end)
+    end
+
+    local character = player.Character
+    if not character then return end
+
+    if State.desyncClientHighlight and State.desyncClientHighlight.Adornee ~= character then
+        State.desyncClientHighlight.Adornee = character
+    end
+
+    if State.desyncClientBillboard then
+        local adornee = character:FindFirstChild("Head") or character:FindFirstChild("HumanoidRootPart")
+        if adornee and State.desyncClientBillboard.Adornee ~= adornee then
+            State.desyncClientBillboard.Adornee = adornee
+        end
+    elseif State.desyncVisualFolder then
+        local adornee = character:FindFirstChild("Head") or character:FindFirstChild("HumanoidRootPart")
+        if adornee then
+            State.desyncClientBillboard = createDesyncBillboard(
+                adornee,
+                "CLIENT POSITION",
+                Color3.fromRGB(120, 210, 255),
+                Vector3.new(0, 2.8, 0),
+                State.desyncVisualFolder
+            )
+        end
+    end
+end
+
+local function processDesyncInteractions(hrp)
+    if not hrp or not State.desyncEnabled then return end
+    if State.bloodManipEnabled and State.holdingBloodManipKey then return end
+
+    pcall(function()
+        if firetouchinterest then
+            for _, part in ipairs(Workspace:GetPartsInPart(hrp)) do
+                if part ~= hrp and part.CanTouch and not part:IsDescendantOf(player.Character) then
+                    firetouchinterest(hrp, part, 0)
+                    firetouchinterest(hrp, part, 1)
+                end
+            end
+        end
+    end)
+
+    local interactHeld = UserInputService:IsKeyDown(Enum.KeyCode.E)
+        or UserInputService:IsKeyDown(Enum.KeyCode.F)
+
+    if not interactHeld then return end
+
+    pcall(function()
+        if fireproximityprompt then
+            for _, desc in ipairs(Workspace:GetDescendants()) do
+                if desc:IsA("ProximityPrompt") and desc.Enabled then
+                    local anchor = desc.Parent
+                    local anchorPos = nil
+
+                    if anchor:IsA("Attachment") then
+                        anchorPos = anchor.WorldPosition
+                    elseif anchor:IsA("BasePart") then
+                        anchorPos = anchor.Position
+                    elseif anchor:IsA("Model") then
+                        local primary = anchor.PrimaryPart or anchor:FindFirstChildWhichIsA("BasePart")
+                        anchorPos = primary and primary.Position
+                    end
+
+                    if anchorPos and (hrp.Position - anchorPos).Magnitude <= desc.MaxActivationDistance + 3 then
+                        fireproximityprompt(desc, 1)
+                    end
+                end
+            end
+        end
+    end)
+
+    pcall(function()
+        if not getconnections then return end
+
+        local ray = Ray.new(hrp.Position, hrp.CFrame.LookVector * 12)
+        local hit = Workspace:FindPartOnRayWithIgnoreList(ray, {player.Character, State.desyncVisualFolder})
+        if not hit then return end
+
+        for _, desc in ipairs(hit:GetDescendants()) do
+            if desc:IsA("ClickDetector") then
+                for _, conn in ipairs(getconnections(desc.MouseClick)) do
+                    conn:Fire()
+                end
+            end
+        end
+
+        local clickDetector = hit:FindFirstChildOfClass("ClickDetector")
+        if clickDetector then
+            for _, conn in ipairs(getconnections(clickDetector.MouseClick)) do
+                conn:Fire()
+            end
+        end
+    end)
 end
 
 local function holdDesyncExitPosition(cframe)
     if State.desyncPositionHoldConnection then
         pcall(function()
-            desyncPositionHoldConnection:Disconnect()
+            State.desyncPositionHoldConnection:Disconnect()
         end)
         State.desyncPositionHoldConnection = nil
     end
@@ -1729,7 +2300,7 @@ local function holdDesyncExitPosition(cframe)
     State.desyncPositionHoldConnection = RunService.Heartbeat:Connect(function()
         if State.desyncEnabled or tick() > holdUntil then
             if State.desyncPositionHoldConnection then
-                desyncPositionHoldConnection:Disconnect()
+                State.desyncPositionHoldConnection:Disconnect()
                 State.desyncPositionHoldConnection = nil
             end
             return
@@ -1760,6 +2331,8 @@ local function cleanupDesyncConnections()
         end)
         State.desyncRenderBound = false
     end
+
+    cleanupDesyncVisuals()
 end
 
 local function stopDesyncEngine()
@@ -1804,7 +2377,7 @@ end
 local function startDesyncEngine()
     if State.desyncPositionHoldConnection then
         pcall(function()
-            desyncPositionHoldConnection:Disconnect()
+            State.desyncPositionHoldConnection:Disconnect()
         end)
         State.desyncPositionHoldConnection = nil
     end
@@ -1833,6 +2406,7 @@ local function startDesyncEngine()
         State.desyncClientCFrame = hrp.CFrame
         applyDesyncHiddenProps(hrp, true)
         bindDesyncTouchInterest(hrp.Parent)
+        setupDesyncVisuals(State.desyncServerCFrame)
     end
 
     table.insert(State.desyncConnections, RunService.Heartbeat:Connect(function()
@@ -1842,10 +2416,11 @@ local function startDesyncEngine()
         if not currentHrp then return end
 
         State.desyncClientCFrame = currentHrp.CFrame
-        State.desyncServerCFrame = State.desyncClientCFrame
 
         applyDesyncHiddenProps(currentHrp, true)
         applyDesyncTouchInterest(currentHrp.Parent)
+        updateDesyncVisuals()
+        processDesyncInteractions(currentHrp)
     end))
 end
 
@@ -1972,6 +2547,7 @@ local function updateJumpHack(humanoid)
 end
 
 local function updateMovementHacks()
+    if State.flingInProgress then return end
     local humanoid = getHumanoid()
     local hrp = getRoot()
     if not humanoid or not hrp then return end
@@ -2011,6 +2587,7 @@ local function setNoclip(enabled)
 end
 
 local function updateFlight()
+    if State.flingInProgress then return end
     local humanoid = getHumanoid()
     local hrp = getRoot()
     if not hrp then return end
@@ -2141,6 +2718,47 @@ local function setupCharacterMovement(character)
     end
 end
 
+State.__bundleA = {
+    clearHighlight = clearHighlight,
+    createPlayerESP = createPlayerESP,
+    updateMovementHacks = updateMovementHacks,
+    updateFlight = updateFlight,
+    setNoclip = setNoclip,
+    getHumanoid = getHumanoid,
+    getRoot = getRoot,
+    updateSpeedHack = updateSpeedHack,
+    isPlayerHomelander = isPlayerHomelander,
+    setHubToggle = setHubToggle,
+    resetMovementSettings = resetMovementSettings,
+    stopDesyncEngine = stopDesyncEngine,
+    setDesync = setDesync,
+    setupCharacterMovement = setupCharacterMovement,
+    applyJumpBoost = applyJumpBoost,
+    applyJumpStats = applyJumpStats,
+    applyMovementStatsNow = applyMovementStatsNow,
+    stopFlight = stopFlight,
+    findHomelanderFromSpectateUI = findHomelanderFromSpectateUI,
+    findHomelanderFromOverheadTags = findHomelanderFromOverheadTags,
+    findHomelanderFromLeaderstats = findHomelanderFromLeaderstats,
+    getKillerRoleForPlayer = getKillerRoleForPlayer,
+    hasExplicitHomelanderRole = hasExplicitHomelanderRole,
+}
+
+end -- scope block 1 (Luau local register limit)
+
+do
+
+local A = State.__bundleA
+local getRoot = A.getRoot
+local getHumanoid = A.getHumanoid
+local setHubToggle = A.setHubToggle
+local setDesync = A.setDesync
+local findHomelanderFromSpectateUI = A.findHomelanderFromSpectateUI
+local findHomelanderFromOverheadTags = A.findHomelanderFromOverheadTags
+local findHomelanderFromLeaderstats = A.findHomelanderFromLeaderstats
+local getKillerRoleForPlayer = A.getKillerRoleForPlayer
+local hasExplicitHomelanderRole = A.hasExplicitHomelanderRole
+
 local function findHomelanderPlayer()
     local spectateTarget, spectateRole = findHomelanderFromSpectateUI()
     if spectateTarget and spectateTarget.Character
@@ -2176,58 +2794,323 @@ local function findHomelanderPlayer()
     return nil
 end
 
-local function flingCharacterRoot(hrp)
-    if not hrp then return end
-
+local function expandFlingSimulation()
     pcall(function()
         setsimulationradius(2e19, 2e19)
         sethiddenproperty(player, "SimulationRadius", 2e19)
         sethiddenproperty(player, "MaxSimulationRadius", 2e19)
     end)
+end
 
-    local power = 650
-    local velocity = Vector3.new(
-        math.random(-power, power),
-        math.random(500, power),
-        math.random(-power, power)
-    )
+local function setCharacterCFrame(character, rootPart, cf)
+    if not rootPart or not cf then return end
 
-    for _ = 1, 10 do
-        pcall(function()
-            hrp.AssemblyLinearVelocity = velocity
-            hrp.AssemblyAngularVelocity = Vector3.new(
-                math.random(-150, 150),
-                math.random(-150, 150),
-                math.random(-150, 150)
-            )
-        end)
-        RunService.Heartbeat:Wait()
+    pcall(function()
+        if character and not character.PrimaryPart then
+            character.PrimaryPart = rootPart
+        end
+        if character then
+            character:SetPrimaryPartCFrame(cf)
+        else
+            rootPart.CFrame = cf
+        end
+    end)
+
+    pcall(function()
+        rootPart.CFrame = cf
+    end)
+end
+
+local function applySkidFlingVelocity(rootPart)
+    if not rootPart then return end
+
+    local vel = Vector3.new(9e7, 9e7 * 10, 9e7)
+    local rotVel = Vector3.new(9e8, 9e8, 9e8)
+
+    pcall(function()
+        rootPart.Velocity = vel
+        rootPart.RotVelocity = rotVel
+        rootPart.AssemblyLinearVelocity = vel
+        rootPart.AssemblyAngularVelocity = rotVel
+    end)
+end
+
+local function clearPartVelocities(part)
+    if not part or not part:IsA("BasePart") then return end
+
+    pcall(function()
+        part.Velocity = Vector3.zero
+        part.RotVelocity = Vector3.zero
+        part.AssemblyLinearVelocity = Vector3.zero
+        part.AssemblyAngularVelocity = Vector3.zero
+    end)
+end
+
+local function getPartSpeed(part)
+    if not part then return 0 end
+
+    local speed = 0
+    pcall(function()
+        speed = part.AssemblyLinearVelocity.Magnitude
+        if part.Velocity.Magnitude > speed then
+            speed = part.Velocity.Magnitude
+        end
+    end)
+
+    return speed
+end
+
+local function targetWasFlinged(targetCharacter, targetRoot)
+    if not targetCharacter then return false end
+    if targetRoot and getPartSpeed(targetRoot) > 500 then
+        return true
     end
+
+    local head = targetCharacter:FindFirstChild("Head")
+    return head ~= nil and getPartSpeed(head) > 500
+end
+
+local function setLocalCharacterCollisions(enabled)
+    local character = player.Character
+    if not character then return end
+
+    for _, part in ipairs(character:GetDescendants()) do
+        if part:IsA("BasePart") then
+            part.CanCollide = enabled
+        end
+    end
+end
+
+local function skidFlingOscillate(rootPart, character, basePart, targetHumanoid, angle)
+    local moveDir = targetHumanoid and targetHumanoid.MoveDirection or Vector3.zero
+    local targetSpeed = getPartSpeed(basePart)
+
+    local function fpos(pos, ang)
+        local cf = CFrame.new(basePart.Position) * pos * ang
+        setCharacterCFrame(character, rootPart, cf)
+        applySkidFlingVelocity(rootPart)
+    end
+
+    fpos(CFrame.new(0, 1.5, 0) + moveDir * targetSpeed / 1.25, CFrame.Angles(math.rad(angle), 0, 0))
+    task.wait()
+    fpos(CFrame.new(0, -1.5, 0) + moveDir * targetSpeed / 1.25, CFrame.Angles(math.rad(angle), 0, 0))
+    task.wait()
+    fpos(CFrame.new(2.25, 1.5, -2.25) + moveDir * targetSpeed / 1.25, CFrame.Angles(math.rad(angle), 0, 0))
+    task.wait()
+    fpos(CFrame.new(-2.25, -1.5, 2.25) + moveDir * targetSpeed / 1.25, CFrame.Angles(math.rad(angle), 0, 0))
+    task.wait()
+    fpos(CFrame.new(0, 1.5, 0) + moveDir, CFrame.Angles(math.rad(angle), 0, 0))
+    task.wait()
+    fpos(CFrame.new(0, -1.5, 0) + moveDir, CFrame.Angles(math.rad(angle), 0, 0))
+    task.wait()
+end
+
+local function skidFlingSpin(rootPart, character, basePart, targetHumanoid, targetRoot)
+    local walkSpeed = targetHumanoid and targetHumanoid.WalkSpeed or 16
+    local targetSpeed = getPartSpeed(targetRoot or basePart)
+
+    local function fpos(pos, ang)
+        local cf = CFrame.new(basePart.Position) * pos * ang
+        setCharacterCFrame(character, rootPart, cf)
+        applySkidFlingVelocity(rootPart)
+    end
+
+    fpos(CFrame.new(0, 1.5, walkSpeed), CFrame.Angles(math.rad(90), 0, 0))
+    task.wait()
+    fpos(CFrame.new(0, -1.5, -walkSpeed), CFrame.Angles(0, 0, 0))
+    task.wait()
+    fpos(CFrame.new(0, 1.5, walkSpeed), CFrame.Angles(math.rad(90), 0, 0))
+    task.wait()
+    fpos(CFrame.new(0, 1.5, targetSpeed / 1.25), CFrame.Angles(math.rad(90), 0, 0))
+    task.wait()
+    fpos(CFrame.new(0, -1.5, -targetSpeed / 1.25), CFrame.Angles(0, 0, 0))
+    task.wait()
+    fpos(CFrame.new(0, 1.5, targetSpeed / 1.25), CFrame.Angles(math.rad(90), 0, 0))
+    task.wait()
+    fpos(CFrame.new(0, -1.5, 0), CFrame.Angles(math.rad(90), 0, 0))
+    task.wait()
+    fpos(CFrame.new(0, -1.5, 0), CFrame.Angles(0, 0, 0))
+    task.wait()
+    fpos(CFrame.new(0, -1.5, 0), CFrame.Angles(math.rad(-90), 0, 0))
+    task.wait()
+    fpos(CFrame.new(0, -1.5, 0), CFrame.Angles(0, 0, 0))
+    task.wait()
+end
+
+local function runSkidFlingOnPart(rootPart, character, humanoid, targetPlayer, targetCharacter, targetHumanoid, basePart, timeLimit)
+    local angle = 0
+    local started = tick()
+    local targetRoot = targetHumanoid and targetHumanoid.RootPart
+
+    repeat
+        if not rootPart.Parent or not basePart.Parent or humanoid.Health <= 0 then
+            break
+        end
+        if targetHumanoid and targetHumanoid.Sit then
+            break
+        end
+
+        angle = angle + 100
+        if getPartSpeed(basePart) < 50 then
+            skidFlingOscillate(rootPart, character, basePart, targetHumanoid, angle)
+        else
+            skidFlingSpin(rootPart, character, basePart, targetHumanoid, targetRoot)
+        end
+    until targetWasFlinged(targetCharacter, targetRoot)
+        or basePart.Parent ~= targetCharacter
+        or targetPlayer.Parent ~= Players
+        or targetPlayer.Character ~= targetCharacter
+        or (targetHumanoid and targetHumanoid.Sit)
+        or humanoid.Health <= 0
+        or tick() > started + timeLimit
+end
+
+local function skidFlingPlayer(targetPlayer)
+    if State.flingInProgress or not targetPlayer or targetPlayer == player then
+        return false
+    end
+
+    local character = player.Character
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+    local rootPart = humanoid and humanoid.RootPart
+
+    local targetCharacter = targetPlayer.Character
+    local targetHumanoid = targetCharacter and targetCharacter:FindFirstChildOfClass("Humanoid")
+    local targetRoot = targetHumanoid and targetHumanoid.RootPart
+    local targetHead = targetCharacter and targetCharacter:FindFirstChild("Head")
+
+    if not character or not humanoid or not rootPart then
+        return false
+    end
+    if not targetCharacter or not targetHumanoid or not targetRoot then
+        return false
+    end
+    if targetHumanoid.Sit then
+        warn("[NightFall] Target is sitting.")
+        return false
+    end
+    if not targetCharacter:FindFirstChildWhichIsA("BasePart") then
+        return false
+    end
+
+    State.flingInProgress = true
+    expandFlingSimulation()
+
+    local returnCFrame = rootPart.CFrame
+    local savedFPDH = Workspace.FallenPartsDestroyHeight
+    local hadNoclip = State.noclipEnabled
+    local hadDesync = State.desyncEnabled
+    local hadFlight = State.flightEnabled
+
+    if hadDesync then
+        setDesync(false)
+    end
+    if hadFlight then
+        State.flightEnabled = false
+        removeFlightPhysics(rootPart)
+    end
+
+    pcall(function()
+        if targetHead then
+            Workspace.CurrentCamera.CameraSubject = targetHead
+        else
+            Workspace.CurrentCamera.CameraSubject = targetHumanoid
+        end
+    end)
+
+    setLocalCharacterCollisions(true)
+    pcall(function()
+        humanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, false)
+        humanoid.PlatformStand = false
+    end)
+    pcall(function()
+        sethiddenproperty(targetRoot, "NetworkOwnershipRule", Enum.NetworkOwnership.Manual)
+    end)
+
+    Workspace.FallenPartsDestroyHeight = 0 / 0
+
+    local bodyVelocity = Instance.new("BodyVelocity")
+    bodyVelocity.Name = "NightFallFlingBV"
+    bodyVelocity.Parent = rootPart
+    bodyVelocity.Velocity = Vector3.new(9e8, 9e8, 9e8)
+    bodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+
+    local flingPart = targetRoot
+    if targetHead and (targetRoot.Position - targetHead.Position).Magnitude > 5 then
+        flingPart = targetHead
+    end
+
+    local flung = false
+    pcall(function()
+        runSkidFlingOnPart(
+            rootPart,
+            character,
+            humanoid,
+            targetPlayer,
+            targetCharacter,
+            targetHumanoid,
+            flingPart,
+            2.5
+        )
+        flung = targetWasFlinged(targetCharacter, targetRoot)
+    end)
+
+    bodyVelocity:Destroy()
+    pcall(function()
+        humanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, true)
+    end)
+    pcall(function()
+        if Workspace.CurrentCamera then
+            Workspace.CurrentCamera.CameraSubject = humanoid
+        end
+    end)
+
+    local restoreStarted = tick()
+    repeat
+        setCharacterCFrame(character, rootPart, returnCFrame * CFrame.new(0, 0.5, 0))
+        pcall(function()
+            humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
+        end)
+        for _, part in ipairs(character:GetChildren()) do
+            if part:IsA("BasePart") then
+                clearPartVelocities(part)
+            end
+        end
+        task.wait()
+    until (rootPart.Position - returnCFrame.Position).Magnitude < 25 or tick() > restoreStarted + 3
+
+    Workspace.FallenPartsDestroyHeight = savedFPDH
+
+    if hadNoclip then
+        setLocalCharacterCollisions(false)
+    end
+    if hadFlight then
+        State.flightEnabled = true
+    end
+    if hadDesync then
+        setDesync(true)
+        setHubToggle(UI.DesyncToggle, true, "ON", "OFF")
+    end
+
+    State.flingInProgress = false
+
+    if flung then
+        print("[NightFall] Fling connected on " .. targetPlayer.Name)
+    else
+        warn("[NightFall] Fling missed — turn off Noclip/Desync and try again")
+    end
+
+    return flung
 end
 
 local function flingHomelander()
     local homelander = findHomelanderPlayer()
     if not homelander then
-        warn("[ScriptHub] No killer found!")
+        warn("[NightFall] No killer found! Enable Killer ESP first.")
         return
     end
 
-    local targetHrp = homelander.Character and homelander.Character:FindFirstChild("HumanoidRootPart")
-    local myHrp = getRoot()
-    if not targetHrp or not myHrp then
-        warn("[ScriptHub] Could not get character root parts.")
-        return
-    end
-
-    pcall(function()
-        myHrp.CFrame = targetHrp.CFrame
-        myHrp.AssemblyLinearVelocity = Vector3.zero
-        myHrp.AssemblyAngularVelocity = Vector3.zero
-    end)
-
-    task.wait(0.05)
-
-    flingCharacterRoot(targetHrp)
+    skidFlingPlayer(homelander)
 end
 
 local function updateSpin(dt)
@@ -2304,6 +3187,238 @@ local function resetTrollEffects()
     setDesync(false)
     setHubToggle(UI.DesyncToggle, false)
 end
+
+State.__bundleA.updateSpin = updateSpin
+State.__bundleA.flingHomelander = flingHomelander
+State.__bundleA.skidFlingPlayer = skidFlingPlayer
+State.__bundleA.flingSelf = flingSelf
+State.__bundleA.tpRandomPlayer = tpRandomPlayer
+State.__bundleA.bringPlayersToMe = bringPlayersToMe
+State.__bundleA.playAnnoyingSound = playAnnoyingSound
+State.__bundleA.resetTrollEffects = resetTrollEffects
+
+end -- scope block 1d (fling/troll · Luau local register limit)
+
+do
+
+local function clearSpectateConnections()
+    for _, conn in ipairs(State.spectateConnections) do
+        pcall(function()
+            conn:Disconnect()
+        end)
+    end
+    State.spectateConnections = {}
+end
+
+local function getSpectateFocusParts(targetPlayer)
+    local character = targetPlayer and targetPlayer.Character
+    if not character then return nil, nil end
+
+    local hrp = character:FindFirstChild("HumanoidRootPart")
+    local head = character:FindFirstChild("Head")
+    return hrp or head, head or hrp
+end
+
+local function updateSpectateCamera()
+    if not State.spectating or not State.spectateTarget or State.freecamEnabled then return end
+
+    local focusPart, lookPart = getSpectateFocusParts(State.spectateTarget)
+    if not focusPart or not lookPart then return end
+
+    local cam = Workspace.CurrentCamera
+    if not cam then return end
+
+    local lookAt = lookPart.Position + Vector3.new(0, 1.5, 0)
+    local yaw = math.rad(State.spectateYaw or 0)
+    local pitch = math.rad(math.clamp(State.spectatePitch or 20, -80, 80))
+    local dist = math.clamp(State.spectateFollowDistance or 18, 4, 500)
+    local offset = Vector3.new(
+        math.sin(yaw) * math.cos(pitch) * dist,
+        math.sin(pitch) * dist + 4,
+        math.cos(yaw) * math.cos(pitch) * dist
+    )
+
+    pcall(function()
+        cam.CameraType = Enum.CameraType.Scriptable
+        cam.CFrame = CFrame.new(lookAt + offset, lookAt)
+    end)
+end
+
+local function restoreSpectateCamera()
+    local cam = Workspace.CurrentCamera
+    if not cam then return end
+
+    pcall(function()
+        if State.spectateSavedCameraType then
+            cam.CameraType = State.spectateSavedCameraType
+        else
+            cam.CameraType = Enum.CameraType.Custom
+        end
+
+        if State.spectateSavedCameraSubject then
+            cam.CameraSubject = State.spectateSavedCameraSubject
+        else
+            local humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+            if humanoid then
+                cam.CameraSubject = humanoid
+            end
+        end
+
+        player.CameraMaxZoomDistance = State.spectateSavedMaxZoom or 128
+        player.CameraMinZoomDistance = State.spectateSavedMinZoom or 0.5
+    end)
+
+    State.spectateSavedCameraType = nil
+    State.spectateSavedCameraSubject = nil
+    State.spectateSavedMaxZoom = nil
+    State.spectateSavedMinZoom = nil
+end
+
+local function applySpectateCamera(targetPlayer)
+    if not targetPlayer then return false end
+
+    local focusPart = getSpectateFocusParts(targetPlayer)
+    if not focusPart then return false end
+
+    local cam = Workspace.CurrentCamera
+    if not cam then return false end
+
+    if State.spectateSavedCameraType == nil then
+        State.spectateSavedCameraType = cam.CameraType
+        State.spectateSavedCameraSubject = cam.CameraSubject
+        State.spectateSavedMaxZoom = player.CameraMaxZoomDistance
+        State.spectateSavedMinZoom = player.CameraMinZoomDistance
+    end
+
+    pcall(function()
+        player.CameraMaxZoomDistance = math.huge
+        player.CameraMinZoomDistance = 0.5
+        cam.CameraType = Enum.CameraType.Scriptable
+    end)
+
+    updateSpectateCamera()
+    return true
+end
+
+local function stopSpectate()
+    clearSpectateConnections()
+    State.spectating = false
+    State.spectateTarget = nil
+    State.spectateOrbiting = false
+    pcall(function()
+        UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+    end)
+    restoreSpectateCamera()
+
+    if UI.SpectateSelectedLabel then
+        if State.spectateSelected then
+            UI.SpectateSelectedLabel.Text = "Selected: " .. State.spectateSelected.DisplayName
+            UI.SpectateSelectedLabel.TextColor3 = COLORS.text
+        else
+            UI.SpectateSelectedLabel.Text = "Selected: None"
+            UI.SpectateSelectedLabel.TextColor3 = COLORS.textMuted
+        end
+    end
+end
+
+local function startSpectate(targetPlayer)
+    if not targetPlayer or targetPlayer == player then
+        warn("[NightFall] Pick another player to spectate.")
+        return
+    end
+
+    clearSpectateConnections()
+    restoreSpectateCamera()
+
+    State.spectateSelected = targetPlayer
+    State.spectateTarget = targetPlayer
+    State.spectateYaw = 0
+    State.spectatePitch = 20
+    State.spectating = applySpectateCamera(targetPlayer)
+
+    if not State.spectating then
+        warn("[NightFall] Target has no character to spectate.")
+        State.spectateTarget = nil
+        return
+    end
+
+    table.insert(State.spectateConnections, targetPlayer.CharacterAdded:Connect(function()
+        if State.spectating and State.spectateTarget == targetPlayer then
+            task.wait(0.25)
+            updateSpectateCamera()
+        end
+    end))
+
+    table.insert(State.spectateConnections, targetPlayer.AncestryChanged:Connect(function(_, parent)
+        if not parent and State.spectateTarget == targetPlayer then
+            stopSpectate()
+        end
+    end))
+
+    if UI.SpectateSelectedLabel then
+        UI.SpectateSelectedLabel.Text = "Spectating: " .. targetPlayer.DisplayName
+        UI.SpectateSelectedLabel.TextColor3 = COLORS.accentOn
+    end
+end
+
+local function refreshMiscPlayerList()
+    if not UI.SpectatePlayerList then return end
+
+    for _, child in ipairs(UI.SpectatePlayerList:GetChildren()) do
+        if not child:IsA("UIListLayout") then
+            child:Destroy()
+        end
+    end
+
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= player then
+            local btn = Instance.new("TextButton")
+            btn.Size = UDim2.new(1, 0, 0, 36)
+            btn.BackgroundColor3 = State.spectateSelected == plr and COLORS.tabActiveBg or COLORS.elevated
+            btn.Text = plr.DisplayName .. "  ·  @" .. plr.Name
+            btn.TextColor3 = State.spectateSelected == plr and COLORS.accentLight or COLORS.text
+            btn.Font = Enum.Font.GothamSemibold
+            btn.TextSize = 12
+            btn.AutoButtonColor = false
+            btn.Parent = UI.SpectatePlayerList
+            applyCorner(btn, RADIUS.sm)
+
+            if State.spectateSelected == plr then
+                applyStroke(btn, COLORS.accent, 1, 0.35)
+            end
+
+            btn.MouseEnter:Connect(function()
+                if State.spectateSelected ~= plr then
+                    tween(btn, { BackgroundColor3 = COLORS.surfaceHover })
+                end
+            end)
+            btn.MouseLeave:Connect(function()
+                if State.spectateSelected ~= plr then
+                    tween(btn, { BackgroundColor3 = COLORS.elevated })
+                end
+            end)
+
+            btn.MouseButton1Click:Connect(function()
+                State.spectateSelected = plr
+                if UI.SpectateSelectedLabel then
+                    UI.SpectateSelectedLabel.Text = "Selected: " .. plr.DisplayName
+                    UI.SpectateSelectedLabel.TextColor3 = COLORS.text
+                end
+                refreshMiscPlayerList()
+            end)
+        end
+    end
+end
+
+State.__bundleA.stopSpectate = stopSpectate
+State.__bundleA.startSpectate = startSpectate
+State.__bundleA.refreshMiscPlayerList = refreshMiscPlayerList
+State.__bundleA.updateSpectateCamera = updateSpectateCamera
+
+end -- scope block 1c (spectate · Luau local register limit)
+
+local Scroll = UI.ScannerScroll
+local UIList = UI.ScannerUIList
 
 local function createTempVESP(model)
     if State.tempVBillboards[model] then return end
@@ -2462,6 +3577,7 @@ local function pruneStaleTempVVisuals()
         end
     end
 end
+
 local function clearAllTempVHighlights()
     for part, hl in pairs(State.tempVHighlights) do
         pcall(function() hl:Destroy() end)
@@ -2496,18 +3612,16 @@ State.scanTempVParts = function()
                 local primary = obj:FindFirstChildWhichIsA("BasePart")
                 if primary then
                     local btn = Instance.new("TextButton")
-                    btn.Size = UDim2.new(1, -4, 0, 52)
-                    btn.BackgroundColor3 = COLORS.surfaceHover
+                    btn.Size = UDim2.new(1, -4, 0, 54)
+                    btn.BackgroundColor3 = COLORS.elevated
                     btn.BorderSizePixel = 0
                     btn.Font = Enum.Font.GothamSemibold
-                    btn.TextSize = 13
+                    btn.TextSize = 12
                     btn.TextColor3 = COLORS.text
                     btn.TextXAlignment = Enum.TextXAlignment.Left
                     btn.Parent = Scroll
-
-                    local corner = Instance.new("UICorner")
-                    corner.CornerRadius = UDim.new(0, 8)
-                    corner.Parent = btn
+                    applyCorner(btn, RADIUS.md)
+                    applyStroke(btn, COLORS.border, 1, 0.7)
 
                     local pos = primary.Position
                     local dist = root and math.floor((root.Position - pos).Magnitude) or "?"
@@ -2529,10 +3643,10 @@ State.scanTempVParts = function()
                     end)
 
                     btn.MouseEnter:Connect(function()
-                        btn.BackgroundColor3 = Color3.fromRGB(72, 72, 76)
+                        tween(btn, { BackgroundColor3 = COLORS.surfaceHover })
                     end)
                     btn.MouseLeave:Connect(function()
-                        btn.BackgroundColor3 = COLORS.surfaceHover
+                        tween(btn, { BackgroundColor3 = COLORS.elevated })
                     end)
 
                     trackTempVModel(obj)
@@ -2555,6 +3669,719 @@ State.scanTempVParts = function()
     Scroll.CanvasSize = UDim2.new(0, 0, 0, UIList.AbsoluteContentSize.Y + 16)
     
     return found
+end
+
+State.__bundle = {}
+for key, value in pairs(State.__bundleA) do
+    State.__bundle[key] = value
+end
+State.__bundle.updateTempVESP = updateTempVESP
+State.__bundle.clearAllTempVHighlights = clearAllTempVHighlights
+State.__bundle.clearAllTempVBillboards = clearAllTempVBillboards
+State.__bundle.onTempVPickedUp = onTempVPickedUp
+
+do -- scope block 2 (Luau local register limit)
+local F = State.__bundle
+local clearHighlight = F.clearHighlight
+local createPlayerESP = F.createPlayerESP
+local updateTempVESP = F.updateTempVESP
+local updateMovementHacks = F.updateMovementHacks
+local updateFlight = F.updateFlight
+local updateSpin = F.updateSpin
+local setNoclip = F.setNoclip
+local getHumanoid = F.getHumanoid
+local getRoot = F.getRoot
+local updateSpeedHack = F.updateSpeedHack
+local isPlayerHomelander = F.isPlayerHomelander
+local setHubToggle = F.setHubToggle
+local resetMovementSettings = F.resetMovementSettings
+local resetTrollEffects = F.resetTrollEffects
+local stopDesyncEngine = F.stopDesyncEngine
+local stopSpectate = F.stopSpectate
+local startSpectate = F.startSpectate
+local refreshMiscPlayerList = F.refreshMiscPlayerList
+local setDesync = F.setDesync
+local flingHomelander = F.flingHomelander
+local skidFlingPlayer = F.skidFlingPlayer
+local flingSelf = F.flingSelf
+local setupCharacterMovement = F.setupCharacterMovement
+local applyJumpBoost = F.applyJumpBoost
+local applyJumpStats = F.applyJumpStats
+local tpRandomPlayer = F.tpRandomPlayer
+local bringPlayersToMe = F.bringPlayersToMe
+local playAnnoyingSound = F.playAnnoyingSound
+local clearAllTempVHighlights = F.clearAllTempVHighlights
+local clearAllTempVBillboards = F.clearAllTempVBillboards
+local applyMovementStatsNow = F.applyMovementStatsNow
+local stopFlight = F.stopFlight
+local onTempVPickedUp = F.onTempVPickedUp
+local updateSpectateCamera = F.updateSpectateCamera
+
+local function isCameraDragInput(input)
+    return input.UserInputType == Enum.UserInputType.MouseButton2
+end
+
+local function beginCameraDrag(input)
+    if not isCameraDragInput(input) then
+        return false
+    end
+
+    if State.freecamEnabled then
+        State.freecamLooking = true
+        pcall(function()
+            UserInputService.MouseBehavior = Enum.MouseBehavior.LockCurrentPosition
+            UserInputService.MouseIconEnabled = false
+        end)
+        return true
+    end
+
+    if State.spectating then
+        State.spectateOrbiting = true
+        pcall(function()
+            UserInputService.MouseBehavior = Enum.MouseBehavior.LockCurrentPosition
+        end)
+        return true
+    end
+
+    return false
+end
+
+local function endCameraDrag(input)
+    if not isCameraDragInput(input) then
+        return false
+    end
+
+    local handled = false
+    if State.freecamLooking then
+        State.freecamLooking = false
+        handled = true
+    end
+    if State.spectateOrbiting then
+        State.spectateOrbiting = false
+        handled = true
+    end
+
+    if handled then
+        pcall(function()
+            UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+            UserInputService.MouseIconEnabled = true
+        end)
+        return true
+    end
+
+    return false
+end
+
+local function applyCameraDragDelta(delta)
+    if delta.Magnitude <= 0 then return end
+
+    if State.freecamEnabled and State.freecamLooking then
+        local sensitivity = 0.003
+        State.freecamYaw = (State.freecamYaw or 0) - delta.X * sensitivity
+        State.freecamPitch = math.clamp(
+            (State.freecamPitch or 0) - delta.Y * sensitivity,
+            -1.4,
+            1.4
+        )
+    elseif State.spectating and State.spectateOrbiting then
+        State.spectateYaw = (State.spectateYaw or 0) - delta.X * 0.35
+        State.spectatePitch = math.clamp(
+            (State.spectatePitch or 20) - delta.Y * 0.35,
+            -80,
+            80
+        )
+    end
+end
+
+local function saveCameraState()
+    local cam = Workspace.CurrentCamera
+    if not cam or State.cameraSavedType then return end
+
+    State.cameraSavedType = cam.CameraType
+    State.cameraSavedSubject = cam.CameraSubject
+    State.cameraSavedMaxZoom = player.CameraMaxZoomDistance
+    State.cameraSavedMinZoom = player.CameraMinZoomDistance
+end
+
+local function restoreCameraState()
+    local cam = Workspace.CurrentCamera
+    if not cam then return end
+
+    pcall(function()
+        cam.CameraType = State.cameraSavedType or Enum.CameraType.Custom
+        if State.cameraSavedSubject then
+            cam.CameraSubject = State.cameraSavedSubject
+        else
+            local humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+            if humanoid then
+                cam.CameraSubject = humanoid
+            end
+        end
+        player.CameraMaxZoomDistance = State.cameraSavedMaxZoom or 128
+        player.CameraMinZoomDistance = State.cameraSavedMinZoom or 0.5
+    end)
+
+    State.cameraSavedType = nil
+    State.cameraSavedSubject = nil
+    State.cameraSavedMaxZoom = nil
+    State.cameraSavedMinZoom = nil
+end
+
+local function stopFreecam()
+    if not State.freecamEnabled then return end
+
+    State.freecamEnabled = false
+    State.freecamLooking = false
+    State.freecamCFrame = nil
+    pcall(function()
+        UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+        UserInputService.MouseIconEnabled = true
+    end)
+    restoreCameraState()
+    setHubToggle(UI.FreecamToggle, false)
+end
+
+local function startFreecam()
+    if State.freecamEnabled then return end
+
+    stopSpectate()
+    saveCameraState()
+
+    local cam = Workspace.CurrentCamera
+    if cam then
+        local _, yaw, pitch = cam.CFrame:ToEulerAnglesYXZ()
+        State.freecamYaw = yaw
+        State.freecamPitch = pitch
+        State.freecamCFrame = cam.CFrame
+        cam.CameraType = Enum.CameraType.Scriptable
+        pcall(function()
+            player.CameraMaxZoomDistance = math.huge
+            player.CameraMinZoomDistance = 0.5
+        end)
+    end
+
+    State.freecamEnabled = true
+    setHubToggle(UI.FreecamToggle, true)
+end
+
+local function setFreecam(enabled)
+    if enabled then
+        startFreecam()
+    else
+        stopFreecam()
+    end
+end
+
+local function updateFreecam(dt)
+    if not State.freecamEnabled then return end
+
+    local cam = Workspace.CurrentCamera
+    if not cam then return end
+
+    if cam.CameraType ~= Enum.CameraType.Scriptable then
+        cam.CameraType = Enum.CameraType.Scriptable
+    end
+
+    local pos = State.freecamCFrame and State.freecamCFrame.Position or cam.CFrame.Position
+    local yaw = State.freecamYaw or 0
+    local pitch = State.freecamPitch or 0
+    local rot = CFrame.fromEulerAnglesYXZ(pitch, yaw, 0)
+    local cf = CFrame.new(pos) * rot
+
+    local move = Vector3.zero
+    local speed = State.freecamSpeed or 80
+
+    if UserInputService:IsKeyDown(Enum.KeyCode.W) then
+        move = move + cf.LookVector
+    end
+    if UserInputService:IsKeyDown(Enum.KeyCode.S) then
+        move = move - cf.LookVector
+    end
+    if UserInputService:IsKeyDown(Enum.KeyCode.A) then
+        move = move - cf.RightVector
+    end
+    if UserInputService:IsKeyDown(Enum.KeyCode.D) then
+        move = move + cf.RightVector
+    end
+    if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
+        move = move + Vector3.yAxis
+    end
+    if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl)
+        or UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then
+        move = move - Vector3.yAxis
+    end
+
+    if move.Magnitude > 0 then
+        cf = cf + move.Unit * speed * dt
+    end
+
+    State.freecamCFrame = cf
+    State.freecamYaw = yaw
+    State.freecamPitch = pitch
+    cam.CFrame = cf
+end
+
+local Lighting = game:GetService("Lighting")
+
+local BLOOD_EFFECT_NAME_HINTS = {
+    "blood", "manip", "manipulator", "choke", "grip", "victim",
+    "controlled", "hemorrhage", "crush", "suffocat", "strangle",
+}
+
+local function isHubOwnedGui(obj)
+    if not obj then return false end
+    if obj:GetAttribute("ScriptHubESP") then return true end
+    local gui = obj:IsA("ScreenGui") and obj or obj:FindFirstAncestorOfClass("ScreenGui")
+    if not gui then return false end
+    return gui.Name == "ScriptHub"
+        or gui.Name == "ScriptHubToggle"
+        or gui.Name == "ScriptHubMobileAim"
+end
+
+local function nameLooksLikeBloodEffect(name)
+    if not name or name == "" then return false end
+    local lower = name:lower()
+    for _, hint in ipairs(BLOOD_EFFECT_NAME_HINTS) do
+        if lower:find(hint, 1, true) then
+            return true
+        end
+    end
+    return false
+end
+
+local function isRedManipColor(color)
+    if not color then return false end
+    return color.R >= 0.55
+        and color.G <= 0.35
+        and color.B <= 0.35
+        and (color.R - math.max(color.G, color.B)) >= 0.18
+end
+
+local function isBloodManipVisual(obj)
+    if not obj or isHubOwnedGui(obj) then return false end
+
+    if nameLooksLikeBloodEffect(obj.Name) then
+        if obj:IsA("ScreenGui")
+            or obj:IsA("Frame")
+            or obj:IsA("ImageLabel")
+            or obj:IsA("ColorCorrectionEffect")
+            or obj:IsA("BlurEffect")
+            or obj:IsA("DepthOfFieldEffect") then
+            return true
+        end
+    end
+
+    local ancestor = obj
+    while ancestor do
+        if ancestor:IsA("ScreenGui") and nameLooksLikeBloodEffect(ancestor.Name) then
+            if obj:IsA("GuiObject") or obj:IsA("ColorCorrectionEffect") then
+                return true
+            end
+        end
+        ancestor = ancestor.Parent
+    end
+
+    if obj:IsA("ColorCorrectionEffect") and obj.Enabled then
+        return isRedManipColor(obj.TintColor)
+    end
+
+    if obj:IsA("Frame") or obj:IsA("ImageLabel") then
+        if not obj.Visible then return false end
+
+        local viewport = camera and camera.ViewportSize or Vector2.new(1920, 1080)
+        local absSize = obj.AbsoluteSize
+        if absSize.X >= viewport.X * 0.75 and absSize.Y >= viewport.Y * 0.75 then
+            local color = obj:IsA("Frame") and obj.BackgroundColor3 or obj.ImageColor3
+            local transparency = obj:IsA("Frame") and obj.BackgroundTransparency or obj.ImageTransparency
+            if transparency < 0.98 and isRedManipColor(color) then
+                return true
+            end
+        end
+    end
+
+    return false
+end
+
+local function trackBloodEffect(obj)
+    if not obj then return end
+    for _, tracked in ipairs(State.bloodEffectTracked) do
+        if tracked == obj then
+            return
+        end
+    end
+    table.insert(State.bloodEffectTracked, obj)
+end
+
+local function neutralizeBloodManipVisual(obj)
+    if not obj or not obj.Parent then return end
+
+    pcall(function()
+        if obj:IsA("ScreenGui") then
+            obj:Destroy()
+        elseif obj:IsA("GuiObject") then
+            obj.Visible = false
+            obj:Destroy()
+        elseif obj:IsA("ColorCorrectionEffect")
+            or obj:IsA("BlurEffect")
+            or obj:IsA("DepthOfFieldEffect") then
+            obj.Enabled = false
+        end
+        trackBloodEffect(obj)
+    end)
+end
+
+local function maintainTrackedBloodEffects()
+    local index = 1
+    while index <= #State.bloodEffectTracked do
+        local obj = State.bloodEffectTracked[index]
+        if not obj or not obj.Parent then
+            table.remove(State.bloodEffectTracked, index)
+        else
+            pcall(function()
+                if obj:IsA("ColorCorrectionEffect")
+                    or obj:IsA("BlurEffect")
+                    or obj:IsA("DepthOfFieldEffect") then
+                    if obj.Enabled then
+                        obj.Enabled = false
+                    end
+                elseif obj:IsA("GuiObject") and obj.Visible then
+                    obj.Visible = false
+                end
+            end)
+            index = index + 1
+        end
+    end
+end
+
+local function scanForBloodManipEffects(root)
+    if not root then return end
+
+    for _, desc in ipairs(root:GetDescendants()) do
+        if isBloodManipVisual(desc) then
+            neutralizeBloodManipVisual(desc)
+        end
+    end
+end
+
+local function restoreBloodEffectCamera()
+    if State.bloodEffectRestoringCamera then return end
+    if State.spectating or State.freecamEnabled or State.desyncEnabled then
+        return
+    end
+
+    local cam = Workspace.CurrentCamera
+    if not cam or cam.CameraType == Enum.CameraType.Scriptable then
+        return
+    end
+
+    local normalFov = State.bloodEffectSavedFov or 70
+    local normalMaxZoom = State.bloodEffectSavedMaxZoom or 128
+    local normalMinZoom = State.bloodEffectSavedMinZoom or 0.5
+    local needsRestore = cam.FieldOfView < normalFov - 1
+        or player.CameraMaxZoomDistance < math.min(normalMaxZoom, 12)
+        or player.CameraMinZoomDistance > math.max(normalMinZoom, 4)
+        or (player.CameraMaxZoomDistance <= player.CameraMinZoomDistance + 0.25
+            and player.CameraMaxZoomDistance < normalMaxZoom)
+
+    if not needsRestore then return end
+
+    State.bloodEffectRestoringCamera = true
+    pcall(function()
+        if cam.FieldOfView < normalFov - 1 then
+            cam.FieldOfView = normalFov
+        end
+        if player.CameraMaxZoomDistance < math.min(normalMaxZoom, 12) then
+            player.CameraMaxZoomDistance = normalMaxZoom
+        end
+        if player.CameraMinZoomDistance > math.max(normalMinZoom, 4) then
+            player.CameraMinZoomDistance = normalMinZoom
+        end
+        if player.CameraMaxZoomDistance <= player.CameraMinZoomDistance + 0.25
+            and player.CameraMaxZoomDistance < normalMaxZoom then
+            player.CameraMaxZoomDistance = normalMaxZoom
+            player.CameraMinZoomDistance = normalMinZoom
+        end
+    end)
+    State.bloodEffectRestoringCamera = false
+end
+
+local function updateBloodManipEffectBlock()
+    if not State.removeBloodManipEffects then return end
+
+    maintainTrackedBloodEffects()
+    restoreBloodEffectCamera()
+end
+
+local function clearBloodEffectBlockConnections()
+    for _, conn in ipairs(State.bloodEffectBlockConnections or {}) do
+        pcall(function() conn:Disconnect() end)
+    end
+    State.bloodEffectBlockConnections = {}
+end
+
+local function hookBloodEffectDescendants(root)
+    if not root then return end
+
+    table.insert(State.bloodEffectBlockConnections, root.DescendantAdded:Connect(function(desc)
+        if State.removeBloodManipEffects and isBloodManipVisual(desc) then
+            task.defer(function()
+                neutralizeBloodManipVisual(desc)
+            end)
+        end
+    end))
+end
+
+local function startBloodManipEffectBlock()
+    clearBloodEffectBlockConnections()
+
+    local cam = Workspace.CurrentCamera
+    if cam then
+        State.bloodEffectSavedFov = cam.FieldOfView
+    end
+    State.bloodEffectSavedMaxZoom = player.CameraMaxZoomDistance
+    State.bloodEffectSavedMinZoom = player.CameraMinZoomDistance
+
+    hookBloodEffectDescendants(Lighting)
+    hookBloodEffectDescendants(player:FindFirstChild("PlayerGui"))
+
+    local function hookCurrentCamera()
+        local cam = Workspace.CurrentCamera
+        if cam then
+            hookBloodEffectDescendants(cam)
+        end
+    end
+
+    hookCurrentCamera()
+    table.insert(State.bloodEffectBlockConnections, Workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
+        if State.removeBloodManipEffects then
+            hookCurrentCamera()
+            task.defer(function()
+                scanForBloodManipEffects(Workspace.CurrentCamera)
+            end)
+        end
+    end))
+
+    if player.Character then
+        hookBloodEffectDescendants(player.Character)
+    end
+
+    table.insert(State.bloodEffectBlockConnections, player.CharacterAdded:Connect(function(character)
+        if State.removeBloodManipEffects then
+            hookBloodEffectDescendants(character)
+            task.defer(function()
+                scanForBloodManipEffects(character)
+            end)
+        end
+    end))
+
+    scanForBloodManipEffects(Lighting)
+    scanForBloodManipEffects(Workspace.CurrentCamera)
+    scanForBloodManipEffects(player:FindFirstChild("PlayerGui"))
+    scanForBloodManipEffects(player.Character)
+end
+
+local function stopBloodManipEffectBlock()
+    clearBloodEffectBlockConnections()
+    State.bloodEffectTracked = {}
+end
+
+local function setRemoveBloodManipEffects(enabled)
+    State.removeBloodManipEffects = enabled
+    setHubToggle(UI.RemoveBloodManipEffectsToggle, enabled)
+
+    if enabled then
+        startBloodManipEffectBlock()
+    else
+        stopBloodManipEffectBlock()
+    end
+end
+
+local function getPlayerFromCharacterPart(part)
+    if not part then return nil end
+    local model = part:FindFirstAncestorOfClass("Model")
+    if not model then return nil end
+    return Players:GetPlayerFromCharacter(model)
+end
+
+local function getBloodManipHeadTarget()
+    local cam = Workspace.CurrentCamera
+    if not cam then return nil end
+
+    local filter = {player.Character}
+    if State.desyncVisualFolder then
+        table.insert(filter, State.desyncVisualFolder)
+    end
+
+    local targetPlayer = nil
+
+    pcall(function()
+        local mousePos = UserInputService:GetMouseLocation()
+        local ray = cam:ViewportPointToRay(mousePos.X, mousePos.Y)
+        local params = RaycastParams.new()
+        params.FilterType = Enum.RaycastFilterType.Blacklist
+        params.FilterDescendantsInstances = filter
+
+        local result = Workspace:Raycast(ray.Origin, ray.Direction * 250, params)
+        if result and result.Instance and result.Instance.Name == "Head" then
+            targetPlayer = getPlayerFromCharacterPart(result.Instance)
+        end
+    end)
+
+    if targetPlayer and targetPlayer ~= player then
+        return targetPlayer
+    end
+
+    pcall(function()
+        local mousePos = UserInputService:GetMouseLocation()
+        local closest, closestDist = nil, 120
+
+        for _, plr in pairs(Players:GetPlayers()) do
+            if plr ~= player and plr.Character and plr.Character:FindFirstChild("Head") then
+                local head = plr.Character.Head
+                local screenPos, onScreen = cam:WorldToViewportPoint(head.Position)
+                if onScreen then
+                    local dist = (Vector2.new(screenPos.X, screenPos.Y) - mousePos).Magnitude
+                    if dist < closestDist then
+                        closestDist = dist
+                        closest = plr
+                    end
+                end
+            end
+        end
+
+        targetPlayer = closest
+    end)
+
+    return targetPlayer
+end
+
+local function clearBloodManipHighlight()
+    if State.bloodManipHighlight then
+        pcall(function()
+            State.bloodManipHighlight:Destroy()
+        end)
+        State.bloodManipHighlight = nil
+    end
+end
+
+local function setBloodManipHighlight(plr)
+    clearBloodManipHighlight()
+    if not plr or not plr.Character then return end
+
+    pcall(function()
+        local hl = Instance.new("Highlight")
+        hl.Name = "NightFallBloodManip"
+        hl.Adornee = plr.Character
+        hl.FillColor = Color3.fromRGB(170, 15, 25)
+        hl.OutlineColor = Color3.fromRGB(255, 70, 80)
+        hl.FillTransparency = 0.15
+        hl.OutlineTransparency = 0
+        hl.Parent = CoreGui
+        State.bloodManipHighlight = hl
+    end)
+end
+
+local function resetBloodManipState()
+    State.bloodManipTarget = nil
+    State.bloodManipLockPos = nil
+    State.bloodManipWalkAwayStart = nil
+    clearBloodManipHighlight()
+end
+
+local function executeBloodManipKill(targetPlayer)
+    if State.bloodManipExecuting or not targetPlayer then return end
+
+    State.bloodManipExecuting = true
+    task.spawn(function()
+        local hrp = getRoot()
+        local targetChar = targetPlayer.Character
+        local targetHrp = targetChar and targetChar:FindFirstChild("HumanoidRootPart")
+
+        if not hrp or not targetHrp then
+            State.bloodManipExecuting = false
+            return
+        end
+
+        local returnCFrame = hrp.CFrame
+        local behindPos = targetHrp.Position - targetHrp.CFrame.LookVector * 4.5
+
+        pcall(function()
+            hrp.CFrame = CFrame.new(behindPos, targetHrp.Position)
+            hrp.AssemblyLinearVelocity = Vector3.zero
+            hrp.AssemblyAngularVelocity = Vector3.zero
+        end)
+
+        task.wait(0.60)
+
+        pcall(function()
+            hrp.CFrame = returnCFrame
+            hrp.AssemblyLinearVelocity = Vector3.zero
+            hrp.AssemblyAngularVelocity = Vector3.zero
+        end)
+
+        State.bloodManipExecuting = false
+        if not State.holdingBloodManipKey then
+            resetBloodManipState()
+        else
+            State.bloodManipWalkAwayStart = nil
+            State.bloodManipLockPos = targetHrp.Position
+        end
+    end)
+end
+
+local function updateBloodManipulator()
+    if not State.bloodManipEnabled or State.bloodManipExecuting then return end
+
+    if not State.holdingBloodManipKey then
+        resetBloodManipState()
+        return
+    end
+
+    if not State.bloodManipTarget then
+        local targetPlayer = getBloodManipHeadTarget()
+        if not targetPlayer or not targetPlayer.Character then
+            return
+        end
+
+        local targetHrp = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+        if not targetHrp then
+            return
+        end
+
+        State.bloodManipTarget = targetPlayer
+        State.bloodManipLockPos = targetHrp.Position
+        State.bloodManipWalkAwayStart = nil
+        setBloodManipHighlight(targetPlayer)
+        return
+    end
+
+    local targetPlayer = State.bloodManipTarget
+    if not targetPlayer.Parent or not targetPlayer.Character then
+        resetBloodManipState()
+        return
+    end
+
+    local targetHrp = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not targetHrp then
+        resetBloodManipState()
+        return
+    end
+
+    if not State.bloodManipHighlight or not State.bloodManipHighlight.Parent then
+        setBloodManipHighlight(targetPlayer)
+    end
+
+    if State.bloodManipLockPos then
+        local movedAway = (targetHrp.Position - State.bloodManipLockPos).Magnitude >= 5
+        if movedAway and not State.bloodManipWalkAwayStart then
+            State.bloodManipWalkAwayStart = tick()
+        end
+
+        if State.bloodManipWalkAwayStart
+            and tick() - State.bloodManipWalkAwayStart >= 4.3 then
+            executeBloodManipKill(targetPlayer)
+        end
+    end
 end
 
 local function updatePlayerESP()
@@ -2684,10 +4511,22 @@ end
 
 -- Input Handling
 bindConnection(UserInputService.InputBegan:Connect(function(input, gp)
-    if gp then return end
-    
-    if input.UserInputType == Enum.UserInputType.MouseButton2 then
+    if beginCameraDrag(input) then
+        return
+    end
+
+    if not gp and input.UserInputType == Enum.UserInputType.MouseButton2 then
+        if State.freecamEnabled or State.spectating then
+            return
+        end
         State.holdingRightClick = true
+        return
+    end
+
+    if gp then return end
+
+    if input.KeyCode == Enum.KeyCode.E and State.bloodManipEnabled then
+        State.holdingBloodManipKey = true
     elseif input.KeyCode == Enum.KeyCode.R then
         State.aimbotEnabled = not State.aimbotEnabled
         setHubToggle(UI.AimbotToggle, State.aimbotEnabled)
@@ -2698,8 +4537,47 @@ bindConnection(UserInputService.InputBegan:Connect(function(input, gp)
 end))
 
 bindConnection(UserInputService.InputEnded:Connect(function(input)
+    endCameraDrag(input)
     if input.UserInputType == Enum.UserInputType.MouseButton2 then
         State.holdingRightClick = false
+    elseif input.KeyCode == Enum.KeyCode.E then
+        State.holdingBloodManipKey = false
+        if not State.bloodManipExecuting then
+            resetBloodManipState()
+        end
+    end
+end))
+
+bindConnection(UserInputService.InputChanged:Connect(function(input, gp)
+    if input.UserInputType == Enum.UserInputType.MouseMovement then
+        if State.freecamLooking or State.spectateOrbiting then
+            local delta = Vector2.new(input.Delta.X, input.Delta.Y)
+            if delta.Magnitude > 0 then
+                applyCameraDragDelta(delta)
+            end
+        end
+        return
+    end
+
+    if gp then return end
+
+    if input.UserInputType == Enum.UserInputType.MouseWheel then
+        if State.spectating and not State.freecamEnabled then
+            State.spectateFollowDistance = math.clamp(
+                (State.spectateFollowDistance or 18) - input.Position.Z * 2,
+                4,
+                500
+            )
+        elseif State.freecamEnabled then
+            State.freecamSpeed = math.clamp(
+                (State.freecamSpeed or 80) + input.Position.Z * 4,
+                20,
+                250
+            )
+            if UI.setFreecamSpeedSliderValue then
+                UI.setFreecamSpeedSliderValue(State.freecamSpeed)
+            end
+        end
     end
 end))
 
@@ -2707,6 +4585,12 @@ end))
 bindConnection(RunService.RenderStepped:Connect(function(dt)
     if State.ejected then return end
 
+    updateFreecam(dt)
+    if State.spectating then
+        updateSpectateCamera()
+    end
+    updateBloodManipulator()
+    updateBloodManipEffectBlock()
     updatePlayerESP()
     updateTempVESP()
     updateMovementHacks()
@@ -2727,7 +4611,8 @@ bindConnection(RunService.RenderStepped:Connect(function(dt)
     
     -- Aimbot logic
     local aiming = State.holdingRightClick or State.holdingMobileAim
-    if State.aimbotEnabled and aiming and root and camera then
+    if State.aimbotEnabled and aiming and root and camera
+        and not State.freecamEnabled and not State.spectating then
         pcall(function()
             local useCenter = State.holdingMobileAim
             local isUserHomelander = isPlayerHomelander(player)
@@ -2781,6 +4666,13 @@ ejectScript = function()
 
     pcall(resetMovementSettings)
     pcall(resetTrollEffects)
+    pcall(stopSpectate)
+    pcall(stopFreecam)
+    pcall(resetBloodManipState)
+    pcall(stopBloodManipEffectBlock)
+    pcall(function()
+        UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+    end)
     pcall(stopDesyncEngine)
 
     for _, hl in pairs(State.highlights or {}) do
@@ -2961,6 +4853,17 @@ UI.ResetTogglePosBtn.MouseButton1Click:Connect(function()
     saveTogglePos(defaultPos)
 end)
 
+UI.ResetTogglePosBtn.MouseButton1Click:Connect(function()
+    local defaultPos = UDim2.new(0, 10, 0, 10)
+    UI.ToggleCube.Position = defaultPos
+    saveTogglePos(defaultPos)
+end)
+
+UI.SwappedMouseToggle.MouseButton1Click:Connect(function()
+    State.swappedMouseButtons = not State.swappedMouseButtons
+    setHubToggle(UI.SwappedMouseToggle, State.swappedMouseButtons)
+end)
+
 UI.SpinToggle.MouseButton1Click:Connect(function()
     State.spinEnabled = not State.spinEnabled
     setHubToggle(UI.SpinToggle, State.spinEnabled)
@@ -2969,6 +4872,50 @@ end)
 UI.DesyncToggle.MouseButton1Click:Connect(function()
     setDesync(not State.desyncEnabled)
     setHubToggle(UI.DesyncToggle, State.desyncEnabled, "ON", "OFF")
+end)
+
+UI.RefreshSpectateListBtn.MouseButton1Click:Connect(function()
+    refreshMiscPlayerList()
+end)
+
+UI.SpectateBtn.MouseButton1Click:Connect(function()
+    if State.spectateSelected then
+        stopFreecam()
+        startSpectate(State.spectateSelected)
+    else
+        warn("[NightFall] Select a player from the list first.")
+    end
+end)
+
+UI.StopSpectateBtn.MouseButton1Click:Connect(function()
+    stopSpectate()
+end)
+
+UI.FlingSelectedBtn.MouseButton1Click:Connect(function()
+    if State.spectateSelected then
+        task.spawn(function()
+            skidFlingPlayer(State.spectateSelected)
+        end)
+    else
+        warn("[NightFall] Select a player from the list first.")
+    end
+end)
+
+UI.FreecamToggle.MouseButton1Click:Connect(function()
+    setFreecam(not State.freecamEnabled)
+end)
+
+UI.RemoveBloodManipEffectsToggle.MouseButton1Click:Connect(function()
+    setRemoveBloodManipEffects(not State.removeBloodManipEffects)
+end)
+
+UI.BloodManipToggle.MouseButton1Click:Connect(function()
+    State.bloodManipEnabled = not State.bloodManipEnabled
+    setHubToggle(UI.BloodManipToggle, State.bloodManipEnabled)
+    if not State.bloodManipEnabled then
+        State.holdingBloodManipKey = false
+        resetBloodManipState()
+    end
 end)
 
 UI.FlingHomelanderBtn.MouseButton1Click:Connect(function()
@@ -3024,6 +4971,20 @@ task.spawn(function()
     end
 end)
 
+bindConnection(Players.PlayerAdded:Connect(function()
+    refreshMiscPlayerList()
+end))
+
+bindConnection(Players.PlayerRemoving:Connect(function(leaving)
+    if State.spectateTarget == leaving then
+        stopSpectate()
+    end
+    if State.spectateSelected == leaving then
+        State.spectateSelected = nil
+    end
+    refreshMiscPlayerList()
+end))
+
 -- Character respawn handler
 bindConnection(player.CharacterAdded:Connect(function(character)
     task.spawn(function()
@@ -3042,9 +5003,10 @@ task.defer(function()
         State.scanTempVParts()
     end
     refreshPlayerESPScan()
+    refreshMiscPlayerList()
 end)
 
-end -- scope block (Luau local register limit)
+end -- scope block 2 (Luau local register limit)
 
 print("✅ NightFall loaded")
 if State.isMobile then
@@ -3053,4 +5015,4 @@ else
     print("🎮 Press R to toggle Aimbot | Right-click to aim")
 end
 print("💡 Top-left cube toggles the GUI | Close button ejects the script")
-print("💡 Tabs: Scanner · Movement · Combat · Troll")
+print("💡 Tabs: Scanner · Movement · Combat · Troll · Misc")
