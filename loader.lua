@@ -25,7 +25,14 @@ local CONFIG = {
 
     KEY_CACHE_PATH = "ScriptHub/junkie_key.txt",
     MAX_ATTEMPTS = 5,
+
+    -- Optional: paste your permanent get-key URL from Dashboard → Services → NightFall → Configure Link
+    -- Leave empty to use Junkie.get_key_link() API
+    GET_KEY_URL = "",
 }
+
+local LOADER_VERSION = "2.1"
+print("[NightFall] Loader v" .. LOADER_VERSION)
 
 local COLORS = {
     bg = Color3.fromRGB(13, 14, 18),
@@ -84,9 +91,25 @@ local function loadJunkie()
     end
 
     lib.service = CONFIG.JUNKIE_SERVICE
-    lib.identifier = CONFIG.JUNKIE_IDENTIFIER
+    lib.identifier = tostring(CONFIG.JUNKIE_IDENTIFIER)
     lib.provider = CONFIG.JUNKIE_PROVIDER
     return lib
+end
+
+local function fetchKeyLink(Junkie)
+    if CONFIG.GET_KEY_URL and CONFIG.GET_KEY_URL ~= "" then
+        return CONFIG.GET_KEY_URL, nil
+    end
+
+    local ok, link, err = pcall(function()
+        return Junkie.get_key_link()
+    end)
+
+    if not ok then
+        return nil, tostring(link)
+    end
+
+    return link, err
 end
 
 local function formatKeyError(message)
@@ -314,12 +337,9 @@ local function createKeyUI(Junkie)
             return
         end
 
-        local link, err
-        local ok = pcall(function()
-            link, err = Junkie.get_key_link()
-        end)
+        local link, err = fetchKeyLink(Junkie)
 
-        if ok and link and link ~= "" then
+        if link and link ~= "" then
             cachedKeyLink = link
             if setclipboard then
                 setclipboard(link)
@@ -327,12 +347,17 @@ local function createKeyUI(Junkie)
             else
                 setStatus("Key link: " .. link, COLORS.accentLight)
             end
+            print("[NightFall] Key link:", link)
         elseif err == "RATE_LIMITTED" or err == "RATE_LIMITED" then
-            setStatus("Rate limited — wait ~5 minutes, then try Get Key again.", COLORS.danger)
-        elseif err then
-            setStatus("Get key failed: " .. tostring(err), COLORS.danger)
+            setStatus("Rate limited — wait ~5 minutes, then try again.", COLORS.danger)
+            warn("[NightFall] get_key_link rate limited")
         else
-            setStatus("No provider/link configured. Set up Providers + Configure Link on Junkie.", COLORS.danger)
+            local detail = err and (" (" .. tostring(err) .. ")") or ""
+            setStatus("Get key failed" .. detail .. " — see console (F9).", COLORS.danger)
+            warn("[NightFall] get_key_link failed")
+            warn("[NightFall] service:", CONFIG.JUNKIE_SERVICE, "| provider:", CONFIG.JUNKIE_PROVIDER, "| id:", CONFIG.JUNKIE_IDENTIFIER)
+            warn("[NightFall] error:", tostring(err))
+            warn("[NightFall] Fix: Services → Configure Link, or paste GET_KEY_URL in loader.lua")
         end
     end)
 
