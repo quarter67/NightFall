@@ -15,7 +15,7 @@ local CONFIG = {
     MAX_ATTEMPTS = 5,
 }
 
-local LOADER_VERSION = "3.1-lootlabs"
+local LOADER_VERSION = "3.2-lootlabs"
 print("[NightFall] Loader v" .. LOADER_VERSION)
 
 local COLORS = {
@@ -86,51 +86,99 @@ end
 
 local HWID = getHwid()
 
-local function httpGet(url)
-    local ok, body = pcall(function()
-        return game:HttpGet(url)
-    end)
-    if not ok or not body then
-        return nil, "HTTP request failed"
+local function httpRequestJson(url, method, body, headers)
+    method = method or "GET"
+    headers = headers or {}
+
+    for attempt = 1, 3 do
+        local ok, responseBody = pcall(function()
+            if request then
+                local res = request({
+                    Url = url,
+                    Method = method,
+                    Headers = headers,
+                    Body = body or "",
+                })
+                if res and res.Body then
+                    return res.Body
+                end
+            end
+            if method == "POST" then
+                return game:HttpPost(url, body or "", true, headers["Content-Type"] or "application/json")
+            end
+            return game:HttpGet(url)
+        end)
+
+        if ok and responseBody and responseBody ~= "" then
+            local trimmed = responseBody:gsub("^%s+", ""):gsub("%s+$", "")
+            if trimmed:sub(1, 1) == "{" then
+                local decodeOk, data = pcall(function()
+                    return HttpService:JSONDecode(trimmed)
+                end)
+                if decodeOk then
+                    return data, nil
+                end
+            end
+            if responseBody:find("<!DOCTYPE") or responseBody:find("<html") then
+                if attempt < 3 then
+                    task.wait(3)
+                else
+                    return nil, "Server waking up — wait 30 seconds and try again."
+                end
+            else
+                return nil, "Invalid server response"
+            end
+        elseif attempt < 3 then
+            task.wait(3)
+        end
     end
 
-    local decodeOk, data = pcall(function()
-        return HttpService:JSONDecode(body)
-    end)
+    return nil, "Could not reach key server"
+end
 
-    if not decodeOk then
-        return nil, "Invalid server response"
+local function httpRequestRaw(url)
+    for attempt = 1, 3 do
+        local ok, responseBody = pcall(function()
+            if request then
+                local res = request({
+                    Url = url,
+                    Method = "GET",
+                })
+                if res and res.Body then
+                    return res.Body
+                end
+            end
+            return game:HttpGet(url)
+        end)
+
+        if ok and responseBody and responseBody ~= "" then
+            if responseBody:find("<!DOCTYPE") or responseBody:find("<html") then
+                if attempt < 3 then
+                    task.wait(3)
+                else
+                    return nil, "Server waking up — wait 30 seconds and try again."
+                end
+            else
+                return responseBody, nil
+            end
+        elseif attempt < 3 then
+            task.wait(3)
+        end
     end
 
-    return data, nil
+    return nil, "Could not download script"
 end
 
 local function fetchGetKeyUrl()
-    local ok, body = pcall(function()
-        if request then
-            local res = request({
-                Url = CONFIG.API_BASE_URL .. "/api/get-link",
-                Method = "POST",
-                Headers = { ["Content-Type"] = "application/json" },
-                Body = "{}",
-            })
-            if res and res.Body then
-                return res.Body
-            end
-        end
-        return game:HttpPost(CONFIG.API_BASE_URL .. "/api/get-link", "{}", true, "application/json")
-    end)
+    local data, err = httpRequestJson(
+        CONFIG.API_BASE_URL .. "/api/get-link",
+        "POST",
+        "{}",
+        { ["Content-Type"] = "application/json" }
+    )
 
-    if not ok or not body then
-        return nil, "Could not reach key server"
-    end
-
-    local decodeOk, data = pcall(function()
-        return HttpService:JSONDecode(body)
-    end)
-
-    if not decodeOk or not data then
-        return nil, "Invalid server response"
+    if not data then
+        return nil, err or "Could not reach key server"
     end
 
     if data.ok and data.url then
@@ -165,7 +213,7 @@ local function validateKey(key)
         HttpService:UrlEncode(HWID)
     )
 
-    local data, err = httpGet(url)
+    local data, err = httpRequestJson(url, "GET")
     if not data then
         return false, err or "Validation failed."
     end
@@ -186,12 +234,9 @@ local function downloadScript(key)
         tostring(os.time())
     )
 
-    local ok, source = pcall(function()
-        return game:HttpGet(url)
-    end)
-
-    if not ok or not source or source == "" then
-        return nil, "Failed to download script."
+    local source, dlErr = httpRequestRaw(url)
+    if not source then
+        return nil, dlErr or "Failed to download script."
     end
 
     if source:sub(1, 1) == "{" then
