@@ -1,37 +1,21 @@
 --[[
-    NightFall Loader (Junkie Key System)
+    NightFall Loader (LootLabs Key System)
     Share this file / loadstring — do NOT share improved_script.lua directly
 
-    Dashboard setup:
-    1. Service name + provider name must match Dashboard EXACTLY (case-sensitive)
-    2. Set JUNKIE_IDENTIFIER to your dashboard user ID
-    3. Create a Provider under Providers and link it to your service
-    4. Click Configure Link on your service
-    5. Upload improved_script.lua to Junkie CDN and paste the download URL below
+    Users run this → get key from your site → script loads automatically
 ]]
 
 local CONFIG = {
     REQUIRED_PLACE_ID = 134225461562780,
 
-    -- Must match Dashboard → Services → your service name exactly
-    JUNKIE_SERVICE = "NightFall",
-    JUNKIE_IDENTIFIER = "1111611",
-    JUNKIE_PROVIDER = "NightFall",
+    -- Your Render key server (no trailing slash)
+    API_BASE_URL = "https://nightfall-keys.onrender.com",
 
-    -- Paste from Junkie dashboard after uploading the script (recommended for production)
-    JUNKIE_SCRIPT_URL = "https://api.jnkie.com/api/v1/luascripts/public/6184ece50b3bd7920c9c2ee296c7d9e3ec20db1d89c12d1882226c7533a8f910/download",
-
-    GITHUB_SCRIPT_URL = "https://raw.githubusercontent.com/quarter67/NightFall/main/improved_script.lua?v=",
-
-    KEY_CACHE_PATH = "ScriptHub/junkie_key.txt",
+    KEY_CACHE_PATH = "ScriptHub/nightfall_key.txt",
     MAX_ATTEMPTS = 5,
-
-    -- Optional: paste your permanent get-key URL from Dashboard → Services → NightFall → Configure Link
-    -- Leave empty to use Junkie.get_key_link() API
-    GET_KEY_URL = "",
 }
 
-local LOADER_VERSION = "2.1"
+local LOADER_VERSION = "3.1-lootlabs"
 print("[NightFall] Loader v" .. LOADER_VERSION)
 
 local COLORS = {
@@ -56,10 +40,13 @@ if game.PlaceId ~= CONFIG.REQUIRED_PLACE_ID then
     return
 end
 
-if CONFIG.JUNKIE_IDENTIFIER == "REPLACE_WITH_YOUR_JUNKIE_USER_ID" then
-    warn("[NightFall] Set CONFIG.JUNKIE_IDENTIFIER in loader.lua to your Junkie dashboard user ID.")
+if CONFIG.API_BASE_URL == "https://your-domain.com" then
+    warn("[NightFall] Set CONFIG.API_BASE_URL in loader.lua to your deployed key site.")
     return
 end
+
+local HttpService = game:GetService("HttpService")
+local Players = game:GetService("Players")
 
 local function fsRead(path)
     local ok, result = pcall(function()
@@ -81,79 +68,145 @@ local function fsWrite(path, data)
     end)
 end
 
-local function loadJunkie()
-    local ok, lib = pcall(function()
-        return loadstring(game:HttpGet("https://jnkie.com/sdk/library.lua"))()
-    end)
-    if not ok or not lib then
-        warn("[NightFall] Failed to load Junkie SDK.")
-        return nil
+local function getHwid()
+    if typeof(gethwid) == "function" then
+        local ok, id = pcall(gethwid)
+        if ok and type(id) == "string" and id ~= "" then
+            return id
+        end
     end
 
-    lib.service = CONFIG.JUNKIE_SERVICE
-    lib.identifier = tostring(CONFIG.JUNKIE_IDENTIFIER)
-    lib.provider = CONFIG.JUNKIE_PROVIDER
-    return lib
+    local plr = Players.LocalPlayer
+    if plr then
+        return "uid-" .. tostring(plr.UserId)
+    end
+
+    return "unknown"
 end
 
-local function fetchKeyLink(Junkie)
-    if CONFIG.GET_KEY_URL and CONFIG.GET_KEY_URL ~= "" then
-        return CONFIG.GET_KEY_URL, nil
+local HWID = getHwid()
+
+local function httpGet(url)
+    local ok, body = pcall(function()
+        return game:HttpGet(url)
+    end)
+    if not ok or not body then
+        return nil, "HTTP request failed"
     end
 
-    local ok, link, err = pcall(function()
-        return Junkie.get_key_link()
+    local decodeOk, data = pcall(function()
+        return HttpService:JSONDecode(body)
     end)
 
-    if not ok then
-        return nil, tostring(link)
+    if not decodeOk then
+        return nil, "Invalid server response"
     end
 
-    return link, err
+    return data, nil
 end
 
-local function formatKeyError(message)
-    local msg = message or "Invalid key"
-    if msg == "KEY_EXPIRED" then
-        return "Key expired — get a new one."
-    elseif msg == "HWID_BANNED" then
-        return "Hardware banned."
-    elseif msg == "KEY_INVALIDATED" then
+local function fetchGetKeyUrl()
+    local ok, body = pcall(function()
+        if request then
+            local res = request({
+                Url = CONFIG.API_BASE_URL .. "/api/get-link",
+                Method = "POST",
+                Headers = { ["Content-Type"] = "application/json" },
+                Body = "{}",
+            })
+            if res and res.Body then
+                return res.Body
+            end
+        end
+        return game:HttpPost(CONFIG.API_BASE_URL .. "/api/get-link", "{}", true, "application/json")
+    end)
+
+    if not ok or not body then
+        return nil, "Could not reach key server"
+    end
+
+    local decodeOk, data = pcall(function()
+        return HttpService:JSONDecode(body)
+    end)
+
+    if not decodeOk or not data then
+        return nil, "Invalid server response"
+    end
+
+    if data.ok and data.url then
+        return data.url, nil
+    end
+
+    return nil, data.error or "Get key failed"
+end
+
+local function formatKeyError(code)
+    if code == "KEY_EXPIRED" then
+        return "Key expired — get a new one from the website."
+    elseif code == "KEY_REVOKED" then
         return "Key was revoked."
-    elseif msg == "ALREADY_USED" then
-        return "Key already used."
-    elseif msg == "HWID_MISMATCH" then
-        return "HWID limit reached for this key."
-    elseif msg == "SERVICE_MISMATCH" then
-        return "Key is for a different script."
-    elseif msg == "PREMIUM_REQUIRED" then
-        return "Premium key required."
+    elseif code == "HWID_MISMATCH" then
+        return "This key is locked to another device."
+    elseif code == "Missing HWID." then
+        return "Could not read HWID from executor."
     end
-    return msg
+    return code or "Invalid key"
 end
 
-local function validateKey(Junkie, key)
+local function validateKey(key)
     if not key or key == "" then
         return false, "Enter a key."
     end
 
-    local ok, result = pcall(function()
-        return Junkie.check_key(key)
-    end)
+    local url = string.format(
+        "%s/api/validate?key=%s&hwid=%s",
+        CONFIG.API_BASE_URL,
+        HttpService:UrlEncode(key:upper()),
+        HttpService:UrlEncode(HWID)
+    )
 
-    if not ok or not result then
-        return false, "Validation failed. Try again."
+    local data, err = httpGet(url)
+    if not data then
+        return false, err or "Validation failed."
     end
 
-    if result.valid then
-        return true, key
+    if data.valid then
+        return true, key:upper()
     end
 
-    return false, formatKeyError(result.message or result.error)
+    return false, formatKeyError(data.error)
 end
 
-local function createKeyUI(Junkie)
-    local Players = game:GetService("Players")
+local function downloadScript(key)
+    local url = string.format(
+        "%s/api/script?key=%s&hwid=%s&t=%s",
+        CONFIG.API_BASE_URL,
+        HttpService:UrlEncode(key),
+        HttpService:UrlEncode(HWID),
+        tostring(os.time())
+    )
+
+    local ok, source = pcall(function()
+        return game:HttpGet(url)
+    end)
+
+    if not ok or not source or source == "" then
+        return nil, "Failed to download script."
+    end
+
+    if source:sub(1, 1) == "{" then
+        local decodeOk, data = pcall(function()
+            return HttpService:JSONDecode(source)
+        end)
+        if decodeOk and data and data.error then
+            return nil, data.error
+        end
+    end
+
+    return source, nil
+end
+
+local function createKeyUI()
     local CoreGui = game:GetService("CoreGui")
     local TweenService = game:GetService("TweenService")
     local player = Players.LocalPlayer
@@ -222,7 +275,7 @@ local function createKeyUI(Junkie)
     subtitle.Size = UDim2.new(1, -32, 0, 18)
     subtitle.Position = UDim2.new(0, 28, 0, 42)
     subtitle.BackgroundTransparency = 1
-    subtitle.Text = "Enter your Junkie key to continue"
+    subtitle.Text = "Enter your key to continue"
     subtitle.Font = Enum.Font.GothamMedium
     subtitle.TextSize = 12
     subtitle.TextColor3 = COLORS.textMuted
@@ -246,7 +299,7 @@ local function createKeyUI(Junkie)
     box.Position = UDim2.new(0, 16, 0, 98)
     box.BackgroundColor3 = COLORS.surface
     box.TextColor3 = COLORS.text
-    box.PlaceholderText = "Paste key here..."
+    box.PlaceholderText = "NF-XXXX-XXXX-XXXX"
     box.PlaceholderColor3 = COLORS.textMuted
     box.Text = ""
     box.Font = Enum.Font.GothamMedium
@@ -290,7 +343,7 @@ local function createKeyUI(Junkie)
     hint.Size = UDim2.new(1, -32, 0, 40)
     hint.Position = UDim2.new(0, 16, 0, 200)
     hint.BackgroundTransparency = 1
-    hint.Text = "Your key is saved locally after first login."
+    hint.Text = "Complete ad steps on the website. Key saves locally after login."
     hint.Font = Enum.Font.GothamMedium
     hint.TextSize = 11
     hint.TextColor3 = COLORS.textMuted
@@ -319,7 +372,6 @@ local function createKeyUI(Junkie)
     local resolvedKey = nil
     local done = false
     local attempts = 0
-    local cachedKeyLink = nil
 
     local function setStatus(text, color)
         status.Text = text
@@ -327,37 +379,20 @@ local function createKeyUI(Junkie)
     end
 
     getKeyBtn.MouseButton1Click:Connect(function()
-        if cachedKeyLink then
-            if setclipboard then
-                setclipboard(cachedKeyLink)
-                setStatus("Key link copied to clipboard (cached).", COLORS.success)
-            else
-                setStatus("Key link: " .. cachedKeyLink, COLORS.accentLight)
-            end
-            return
-        end
+        setStatus("Creating key link...", COLORS.textMuted)
 
-        local link, err = fetchKeyLink(Junkie)
-
+        local link, err = fetchGetKeyUrl()
         if link and link ~= "" then
-            cachedKeyLink = link
             if setclipboard then
                 setclipboard(link)
-                setStatus("Key link copied to clipboard.", COLORS.success)
+                setStatus("Key link copied — paste in browser.", COLORS.success)
             else
-                setStatus("Key link: " .. link, COLORS.accentLight)
+                setStatus("Open: " .. CONFIG.API_BASE_URL, COLORS.accentLight)
             end
-            print("[NightFall] Key link:", link)
-        elseif err == "RATE_LIMITTED" or err == "RATE_LIMITED" then
-            setStatus("Rate limited — wait ~5 minutes, then try again.", COLORS.danger)
-            warn("[NightFall] get_key_link rate limited")
+            print("[NightFall] Get key:", link)
         else
-            local detail = err and (" (" .. tostring(err) .. ")") or ""
-            setStatus("Get key failed" .. detail .. " — see console (F9).", COLORS.danger)
-            warn("[NightFall] get_key_link failed")
-            warn("[NightFall] service:", CONFIG.JUNKIE_SERVICE, "| provider:", CONFIG.JUNKIE_PROVIDER, "| id:", CONFIG.JUNKIE_IDENTIFIER)
-            warn("[NightFall] error:", tostring(err))
-            warn("[NightFall] Fix: Services → Configure Link, or paste GET_KEY_URL in loader.lua")
+            setStatus("Get key failed: " .. tostring(err), COLORS.danger)
+            warn("[NightFall] get-link failed:", tostring(err))
         end
     end)
 
@@ -378,7 +413,8 @@ local function createKeyUI(Junkie)
         submitBtn.Text = "Checking..."
         submitBtn.AutoButtonColor = false
 
-        local valid, keyOrErr = validateKey(Junkie, box.Text:gsub("^%s+", ""):gsub("%s+$", ""))
+        local trimmed = box.Text:gsub("^%s+", ""):gsub("%s+$", ""):upper()
+        local valid, keyOrErr = validateKey(trimmed)
         if valid then
             resolvedKey = keyOrErr
             fsWrite(CONFIG.KEY_CACHE_PATH, resolvedKey)
@@ -388,16 +424,6 @@ local function createKeyUI(Junkie)
             done = true
             task.delay(0.35, function()
                 gui:Destroy()
-            end)
-            return
-        end
-
-        if keyOrErr == "Hardware banned." then
-            setStatus(keyOrErr, COLORS.danger)
-            done = true
-            task.delay(0.5, function()
-                gui:Destroy()
-                player:Kick("[NightFall] Hardware banned.")
             end)
             return
         end
@@ -415,15 +441,10 @@ local function createKeyUI(Junkie)
     return resolvedKey
 end
 
-local Junkie = loadJunkie()
-if not Junkie then
-    return
-end
-
 local validatedKey = nil
 local cachedKey = fsRead(CONFIG.KEY_CACHE_PATH)
 if cachedKey and cachedKey ~= "" then
-    local valid, keyOrErr = validateKey(Junkie, cachedKey)
+    local valid, keyOrErr = validateKey(cachedKey)
     if valid then
         validatedKey = keyOrErr
         print("[NightFall] Cached key accepted.")
@@ -433,7 +454,7 @@ if cachedKey and cachedKey ~= "" then
 end
 
 if not validatedKey then
-    validatedKey = createKeyUI(Junkie)
+    validatedKey = createKeyUI()
 end
 
 if not validatedKey then
@@ -443,17 +464,9 @@ end
 
 getgenv().SCRIPT_KEY = validatedKey
 
-local scriptUrl = CONFIG.JUNKIE_SCRIPT_URL
-if not scriptUrl or scriptUrl == "" then
-    scriptUrl = CONFIG.GITHUB_SCRIPT_URL .. tostring(os.time())
-end
-
-local ok, source = pcall(function()
-    return game:HttpGet(scriptUrl)
-end)
-
-if not ok or not source then
-    warn("[NightFall] Failed to download script.")
+local source, dlErr = downloadScript(validatedKey)
+if not source then
+    warn("[NightFall] " .. tostring(dlErr))
     return
 end
 
