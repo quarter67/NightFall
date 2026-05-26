@@ -14,6 +14,8 @@ const NUM_TASKS = parseInt(process.env.LOOTLABS_NUM_TASKS || "5", 10);
 const THEME = parseInt(process.env.LOOTLABS_THEME || "4", 10);
 const KEY_HOURS = parseInt(process.env.KEY_DURATION_HOURS || "24", 10);
 const ADMIN_SECRET = process.env.ADMIN_SECRET || "change-me";
+const SCRIPT_SOURCE_URL = process.env.SCRIPT_SOURCE_URL || "";
+const LOCAL_SCRIPT_PATH = path.join(__dirname, "script", "improved_script.lua");
 const DATA_DIR = path.join(__dirname, "data");
 const DATA_FILE = path.join(DATA_DIR, "store.json");
 
@@ -279,31 +281,20 @@ app.get("/api/session/:sid", (req, res) => {
   });
 });
 
-app.get("/api/validate", (req, res) => {
-  const key = normalizeKey(req.query.key);
-  const hwid = String(req.query.hwid || "").trim();
-
-  if (!key) {
-    return json(res, 400, { ok: false, valid: false, error: "Missing key." });
-  }
-
+function validateKeyForHwid(key, hwid) {
   const store = readStore();
   const record = store.keys[key];
 
   if (!record || !isKeyValid(record)) {
-    return json(res, 200, {
-      ok: true,
-      valid: false,
-      error: record?.revoked ? "KEY_REVOKED" : "KEY_EXPIRED",
-    });
+    return { ok: false, error: record?.revoked ? "KEY_REVOKED" : "KEY_EXPIRED" };
   }
 
   if (!hwid) {
-    return json(res, 200, { ok: true, valid: false, error: "Missing HWID." });
+    return { ok: false, error: "Missing HWID." };
   }
 
   if (record.hwid && record.hwid !== hwid) {
-    return json(res, 200, { ok: true, valid: false, error: "HWID_MISMATCH" });
+    return { ok: false, error: "HWID_MISMATCH" };
   }
 
   if (!record.hwid) {
@@ -312,13 +303,77 @@ app.get("/api/validate", (req, res) => {
     writeStore(store);
   }
 
-  const remainingMs = record.expiresAt - Date.now();
+  return { ok: true, record };
+}
+
+app.get("/api/validate", (req, res) => {
+  const key = normalizeKey(req.query.key);
+  const hwid = String(req.query.hwid || "").trim();
+
+  if (!key) {
+    return json(res, 400, { ok: false, valid: false, error: "Missing key." });
+  }
+
+  const result = validateKeyForHwid(key, hwid);
+  if (!result.ok) {
+    return json(res, 200, { ok: true, valid: false, error: result.error });
+  }
+
+  const remainingMs = result.record.expiresAt - Date.now();
   return json(res, 200, {
     ok: true,
     valid: true,
     expiresAt: record.expiresAt,
     expiresInHours: Math.max(0, Math.ceil(remainingMs / 3600000)),
   });
+});
+
+async function loadScriptSource() {
+  if (fs.existsSync(LOCAL_SCRIPT_PATH)) {
+    const source = fs.readFileSync(LOCAL_SCRIPT_PATH, "utf8");
+    if (source && source.length > 0) {
+      return source;
+    }
+  }
+
+  if (!SCRIPT_SOURCE_URL) {
+    throw new Error("No script found. Upload script/improved_script.lua to GitHub or set SCRIPT_SOURCE_URL.");
+  }
+
+  const scriptRes = await fetch(SCRIPT_SOURCE_URL);
+  if (!scriptRes.ok) {
+    throw new Error(`Script host returned ${scriptRes.status}`);
+  }
+
+  const source = await scriptRes.text();
+  if (!source || source.length === 0) {
+    throw new Error("Script file is empty");
+  }
+
+  return source;
+}
+
+app.get("/api/script", async (req, res) => {
+  const key = normalizeKey(req.query.key);
+  const hwid = String(req.query.hwid || "").trim();
+
+  if (!key) {
+    return json(res, 400, { ok: false, error: "Missing key." });
+  }
+
+  const result = validateKeyForHwid(key, hwid);
+  if (!result.ok) {
+    return json(res, 403, { ok: false, error: result.error });
+  }
+
+  try {
+    const source = await loadScriptSource();
+    res.setHeader("Content-Type", "text/plain; charset=utf-8");
+    res.send(source);
+  } catch (err) {
+    console.error("[script]", err.message);
+    json(res, 502, { ok: false, error: err.message || "Failed to fetch script." });
+  }
 });
 
 app.get("/key", (_req, res) => {
