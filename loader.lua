@@ -8,8 +8,9 @@
 local CONFIG = {
     REQUIRED_PLACE_ID = 134225461562780,
 
-    -- Your Render key server (no trailing slash)
-    API_BASE_URL = "https://nightfall-keys.onrender.com",
+    -- Your Daki key server (no trailing slash) — from Daki Portal → Network tab
+    -- Example: http://eu-node1.daki.cc:25565
+    API_BASE_URL = "http://paid4.daki.cc:4199",
 
     KEY_CACHE_PATH = "ScriptHub/nightfall_key.txt",
     MAX_ATTEMPTS = 5,
@@ -40,8 +41,8 @@ if game.PlaceId ~= CONFIG.REQUIRED_PLACE_ID then
     return
 end
 
-if CONFIG.API_BASE_URL == "https://your-domain.com" then
-    warn("[NightFall] Set CONFIG.API_BASE_URL in loader.lua to your deployed key site.")
+if CONFIG.API_BASE_URL:find("YOUR%-HOST") or CONFIG.API_BASE_URL == "https://your-domain.com" then
+    warn("[NightFall] Set CONFIG.API_BASE_URL in loader.lua to your Daki URL (Network tab).")
     return
 end
 
