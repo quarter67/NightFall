@@ -1282,12 +1282,21 @@ local miscFoldSetters = {}
 local function createMiscFold(parent, title, startExpanded, pageScroll)
     local headerH = State.isMobile and 44 or 40
     local section = Instance.new("Frame")
-    section.Size = UDim2.new(1, 0, 0, headerH)
+    section.Name = title .. "Section"
+    section.Size = UDim2.new(1, 0, 0, 0)
+    section.AutomaticSize = Enum.AutomaticSize.Y
     section.BackgroundTransparency = 1
+    section.ClipsDescendants = true
     section.Parent = parent
+
+    local sectionLayout = Instance.new("UIListLayout")
+    sectionLayout.Padding = UDim.new(0, 4)
+    sectionLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    sectionLayout.Parent = section
 
     local header = Instance.new("TextButton")
     header.Size = UDim2.new(1, 0, 0, headerH)
+    header.LayoutOrder = 1
     header.BackgroundColor3 = COLORS.surface
     header.Text = ""
     header.AutoButtonColor = false
@@ -1332,7 +1341,8 @@ local function createMiscFold(parent, title, startExpanded, pageScroll)
     local body = Instance.new("Frame")
     body.Name = "Body"
     body.Size = UDim2.new(1, 0, 0, 0)
-    body.Position = UDim2.new(0, 0, 0, headerH + 4)
+    body.AutomaticSize = Enum.AutomaticSize.Y
+    body.LayoutOrder = 2
     body.BackgroundTransparency = 1
     body.ClipsDescendants = true
     body.Visible = false
@@ -1344,18 +1354,9 @@ local function createMiscFold(parent, title, startExpanded, pageScroll)
 
     local expanded = false
 
-    local function refreshSectionSize()
-        local bodyHeight = expanded and bodyLayout.AbsoluteContentSize.Y or 0
-        body.Size = UDim2.new(1, 0, 0, bodyHeight)
-        body.Visible = expanded or bodyHeight > 0
-        section.Size = UDim2.new(1, 0, 0, headerH + (expanded and bodyHeight + 4 or 0))
-    end
-
-    bodyLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(refreshSectionSize)
-
-    body.ChildAdded:Connect(function(child)
-        if not child:IsA("UIListLayout") then
-            child.Visible = expanded
+    body.ChildAdded:Connect(function()
+        if not expanded then
+            body.Visible = false
         end
     end)
 
@@ -1371,20 +1372,13 @@ local function createMiscFold(parent, title, startExpanded, pageScroll)
         expanded = value == true
         arrow.Text = expanded and "▾" or "▸"
         body.Visible = expanded
-        for _, child in ipairs(body:GetChildren()) do
-            if not child:IsA("UIListLayout") then
-                child.Visible = expanded
-            end
-        end
-        refreshSectionSize()
         if expanded and pageScroll then
-            scrollToVisible(pageScroll, section, 20)
+            scrollToVisible(pageScroll, section, 24)
             task.delay(0.15, function()
-                scrollToVisible(pageScroll, section, 20)
+                scrollToVisible(pageScroll, section, 24)
             end)
             task.delay(0.35, function()
-                refreshSectionSize()
-                scrollToVisible(pageScroll, section, 20)
+                scrollToVisible(pageScroll, section, 24)
             end)
         end
     end
@@ -1751,6 +1745,7 @@ MiscScroll.Size = UDim2.new(1, 0, 1, 0)
 MiscScroll.BackgroundTransparency = 1
 MiscScroll.BorderSizePixel = 0
 MiscScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+MiscScroll.ClipsDescendants = true
 MiscScroll.Parent = MiscPage
 setupMobileScroll(MiscScroll)
 
@@ -1759,11 +1754,12 @@ MiscContent.Name = "MiscContent"
 MiscContent.Size = UDim2.new(1, 0, 0, 0)
 MiscContent.AutomaticSize = Enum.AutomaticSize.Y
 MiscContent.BackgroundTransparency = 1
+MiscContent.ClipsDescendants = true
 MiscContent.Parent = MiscScroll
 
 local MiscListPad = Instance.new("UIPadding")
 MiscListPad.PaddingTop = UDim.new(0, 4)
-MiscListPad.PaddingBottom = UDim.new(0, State.isMobile and 80 or 12)
+MiscListPad.PaddingBottom = UDim.new(0, State.isMobile and 120 or 12)
 MiscListPad.PaddingRight = UDim.new(0, 8)
 MiscListPad.PaddingLeft = UDim.new(0, 4)
 MiscListPad.Parent = MiscContent
@@ -6324,7 +6320,7 @@ end)
 
 end -- scope block 2b (aimbot + wiring · Luau local register limit)
 
-print("✅ NightFall TEST loaded — build 2026-05-27-MISC-FOLD-FIX (keyless)")
+print("✅ NightFall TEST loaded — build 2026-05-27-MISC-LAYOUT-FIX (keyless)")
 print("🎯 Toggle Aimbot in Combat tab → LOCK ON button appears on mobile, R/right-click on PC")
 print("💡 Top-left cube toggles the GUI | Drag the header bar to move on mobile")
 print("💡 Tabs: Scanner · Movement · Combat · Troll · Misc")
