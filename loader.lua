@@ -8,15 +8,17 @@
 local CONFIG = {
     REQUIRED_PLACE_ID = 134225461562780,
 
-    -- Your Daki key server (no trailing slash) — from Daki Portal → Network tab
-    -- Example: http://eu-node1.daki.cc:25565
-    API_BASE_URL = "http://paid4.daki.cc:4199",
+    -- Fallback if api-url.txt is unavailable (must be HTTPS for Roblox)
+    API_BASE_URL = "https://volume-courts-straight-tribute.trycloudflare.com",
+
+    -- Auto-loaded from GitHub — update api-url.txt when your tunnel URL changes
+    API_URL_SOURCE = "https://raw.githubusercontent.com/quarter67/NightFall/main/api-url.txt",
 
     KEY_CACHE_PATH = "ScriptHub/nightfall_key.txt",
     MAX_ATTEMPTS = 5,
 }
 
-local LOADER_VERSION = "3.2-lootlabs"
+local LOADER_VERSION = "3.4-daki"
 print("[NightFall] Loader v" .. LOADER_VERSION)
 
 local COLORS = {
@@ -41,13 +43,48 @@ if game.PlaceId ~= CONFIG.REQUIRED_PLACE_ID then
     return
 end
 
-if CONFIG.API_BASE_URL:find("YOUR%-HOST") or CONFIG.API_BASE_URL == "https://your-domain.com" then
-    warn("[NightFall] Set CONFIG.API_BASE_URL in loader.lua to your Daki URL (Network tab).")
-    return
+if CONFIG.API_BASE_URL:find("REPLACE%-WITH") or CONFIG.API_BASE_URL == "https://your-domain.com" then
+    warn("[NightFall] Set api-url.txt on GitHub to your HTTPS tunnel URL.")
 end
 
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
+
+local function trim(value)
+    return (value or ""):gsub("^%s+", ""):gsub("%s+$", "")
+end
+
+local function isValidApiUrl(url)
+    url = trim(url)
+    return url:sub(1, 8) == "https://" and not url:find("REPLACE%-WITH")
+end
+
+local function resolveApiUrl()
+    local ok, remote = pcall(function()
+        return game:HttpGet(CONFIG.API_URL_SOURCE)
+    end)
+
+    if ok then
+        local url = trim(remote)
+        if isValidApiUrl(url) then
+            return url
+        end
+    end
+
+    if isValidApiUrl(CONFIG.API_BASE_URL) then
+        return trim(CONFIG.API_BASE_URL)
+    end
+
+    return nil
+end
+
+local API_BASE_URL = resolveApiUrl()
+if not API_BASE_URL then
+    warn("[NightFall] No valid HTTPS API URL. Upload api-url.txt to GitHub with your tunnel URL.")
+    return
+end
+
+print("[NightFall] API → " .. API_BASE_URL)
 
 local function fsRead(path)
     local ok, result = pcall(function()
@@ -134,7 +171,7 @@ local function httpRequestJson(url, method, body, headers)
         end
     end
 
-    return nil, "Could not reach key server"
+    return nil, "Could not reach key server — HTTPS required (Roblox blocks HTTP)"
 end
 
 local function httpRequestRaw(url)
@@ -172,7 +209,7 @@ end
 
 local function fetchGetKeyUrl()
     local data, err = httpRequestJson(
-        CONFIG.API_BASE_URL .. "/api/get-link",
+        API_BASE_URL .. "/api/get-link",
         "POST",
         "{}",
         { ["Content-Type"] = "application/json" }
@@ -209,7 +246,7 @@ local function validateKey(key)
 
     local url = string.format(
         "%s/api/validate?key=%s&hwid=%s",
-        CONFIG.API_BASE_URL,
+        API_BASE_URL,
         HttpService:UrlEncode(key:upper()),
         HttpService:UrlEncode(HWID)
     )
@@ -229,7 +266,7 @@ end
 local function downloadScript(key)
     local url = string.format(
         "%s/api/script?key=%s&hwid=%s&t=%s",
-        CONFIG.API_BASE_URL,
+        API_BASE_URL,
         HttpService:UrlEncode(key),
         HttpService:UrlEncode(HWID),
         tostring(os.time())
@@ -433,7 +470,7 @@ local function createKeyUI()
                 setclipboard(link)
                 setStatus("Key link copied — paste in browser.", COLORS.success)
             else
-                setStatus("Open: " .. CONFIG.API_BASE_URL, COLORS.accentLight)
+                setStatus("Open: " .. API_BASE_URL, COLORS.accentLight)
             end
             print("[NightFall] Get key:", link)
         else
