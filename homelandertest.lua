@@ -361,6 +361,7 @@ UI.ToggleIcon.Parent = UI.ToggleCube
 applyToggleCubeSize(State.toggleCubeSize)
 
 local toggleDragging = false
+local toggleDragInput = nil
 local toggleDragStart, toggleStartPos
 local toggleMoved = false
 local TOGGLE_DRAG_THRESHOLD = 6
@@ -463,35 +464,52 @@ end
 
 syncMainShadowPosition()
 
-local dragging = false
-local dragStart, startPos
+-- Mobile: start slightly inset so the window isn't stuck off-screen before first drag
+if State.isMobile then
+    MainFrame.Position = UDim2.new(0, 12, 0.5, -200)
+    syncMainShadowPosition()
+end
 
-local function makeDraggable(frame, handle)
-    handle.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1
-            or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = true
-            dragStart = input.Position
-            startPos = frame.Position
-            input.Changed:Connect(function()
-                if input.UserInputState == Enum.UserInputState.End then
-                    dragging = false
-                end
-            end)
-        end
-    end)
+-- Hub drag (mobile-safe: track the exact touch that started the drag)
+local hubDragging = false
+local hubDragInput = nil
+local hubDragStart = nil
+local hubDragStartPos = nil
+
+local function beginHubDrag(input)
+    if input.UserInputType ~= Enum.UserInputType.MouseButton1
+        and input.UserInputType ~= Enum.UserInputType.Touch then
+        return
+    end
+    hubDragging = true
+    hubDragInput = input
+    hubDragStart = input.Position
+    hubDragStartPos = MainFrame.Position
+end
+
+local function updateHubDrag(input)
+    if not hubDragging or input ~= hubDragInput then return end
+    if input.UserInputType ~= Enum.UserInputType.MouseMovement
+        and input.UserInputType ~= Enum.UserInputType.Touch then
+        return
+    end
+    local delta = input.Position - hubDragStart
+    MainFrame.Position = UDim2.new(
+        hubDragStartPos.X.Scale, hubDragStartPos.X.Offset + delta.X,
+        hubDragStartPos.Y.Scale, hubDragStartPos.Y.Offset + delta.Y
+    )
+    syncMainShadowPosition()
+end
+
+local function endHubDrag(input)
+    if hubDragInput and input == hubDragInput then
+        hubDragging = false
+        hubDragInput = nil
+    end
 end
 
 bindConnection(UserInputService.InputChanged:Connect(function(input)
-    if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement
-        or input.UserInputType == Enum.UserInputType.Touch) then
-        local delta = input.Position - dragStart
-        MainFrame.Position = UDim2.new(
-            startPos.X.Scale, startPos.X.Offset + delta.X,
-            startPos.Y.Scale, startPos.Y.Offset + delta.Y
-        )
-        syncMainShadowPosition()
-    end
+    updateHubDrag(input)
 
     if mobileAimDragging and State.mobileAimDragUnlocked
         and (input.UserInputType == Enum.UserInputType.Touch
@@ -503,8 +521,9 @@ bindConnection(UserInputService.InputChanged:Connect(function(input)
         )
     end
 
-    if toggleDragging and (input.UserInputType == Enum.UserInputType.MouseMovement
-        or input.UserInputType == Enum.UserInputType.Touch) then
+    if toggleDragging and input == toggleDragInput
+        and (input.UserInputType == Enum.UserInputType.MouseMovement
+            or input.UserInputType == Enum.UserInputType.Touch) then
         local delta = input.Position - toggleDragStart
         if delta.Magnitude > TOGGLE_DRAG_THRESHOLD then
             toggleMoved = true
@@ -573,8 +592,30 @@ UI.CloseBtn.TextColor3 = COLORS.textMuted
 UI.CloseBtn.TextSize = 22
 UI.CloseBtn.Font = Enum.Font.GothamMedium
 UI.CloseBtn.AutoButtonColor = false
+UI.CloseBtn.ZIndex = 12
 UI.CloseBtn.Parent = Header
 applyCorner(UI.CloseBtn, RADIUS.sm)
+
+-- Transparent drag bar — Frames/TextLabels don't reliably receive mobile touch
+UI.HeaderDrag = Instance.new("TextButton")
+UI.HeaderDrag.Name = "HeaderDrag"
+UI.HeaderDrag.Size = UDim2.new(1, -48, 1, 0)
+UI.HeaderDrag.BackgroundTransparency = 1
+UI.HeaderDrag.Text = ""
+UI.HeaderDrag.AutoButtonColor = false
+UI.HeaderDrag.ZIndex = 10
+UI.HeaderDrag.Active = true
+UI.HeaderDrag.Parent = Header
+
+bindConnection(UI.HeaderDrag.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    beginHubDrag(input)
+end))
+
+-- Desktop can also drag from the title area labels
+for _, dragTarget in ipairs({ HubTitle, HubSubtitle, HeaderAccent }) do
+    dragTarget.Active = false
+end
 
 UI.CloseBtn.MouseEnter:Connect(function()
     tween(UI.CloseBtn, { BackgroundColor3 = COLORS.danger, TextColor3 = COLORS.text })
@@ -583,12 +624,11 @@ UI.CloseBtn.MouseLeave:Connect(function()
     tween(UI.CloseBtn, { BackgroundColor3 = COLORS.surface, TextColor3 = COLORS.textMuted })
 end)
 
-makeDraggable(MainFrame, Header)
-
 bindConnection(UI.ToggleCube.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1
         or input.UserInputType == Enum.UserInputType.Touch then
         toggleDragging = true
+        toggleDragInput = input
         toggleMoved = false
         toggleDragStart = input.Position
         toggleStartPos = UI.ToggleCube.Position
@@ -596,14 +636,15 @@ bindConnection(UI.ToggleCube.InputBegan:Connect(function(input)
 end))
 
 bindConnection(UI.ToggleCube.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1
-        or input.UserInputType == Enum.UserInputType.Touch then
+    if toggleDragInput and input == toggleDragInput then
         if toggleDragging and toggleMoved then
             saveTogglePos(UI.ToggleCube.Position)
         elseif toggleDragging and not toggleMoved then
             setHubVisible(not MainFrame.Visible)
         end
         toggleDragging = false
+        toggleDragInput = nil
+        toggleMoved = false
     end
 end))
 
@@ -1047,6 +1088,7 @@ local function createHubSlider(parent, title, minVal, maxVal, defaultVal, onChan
 
     local current = defaultVal
     local draggingSlider = false
+    local sliderDragInput = nil
 
     local function setValue(value, fireCallback)
         current = math.clamp(math.floor(value + 0.5), minVal, maxVal)
@@ -1071,20 +1113,22 @@ local function createHubSlider(parent, title, minVal, maxVal, defaultVal, onChan
         if input.UserInputType == Enum.UserInputType.MouseButton1
             or input.UserInputType == Enum.UserInputType.Touch then
             draggingSlider = true
+            sliderDragInput = input
             updateFromInput(input)
         end
     end)
 
     track.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1
-            or input.UserInputType == Enum.UserInputType.Touch then
+        if sliderDragInput and input == sliderDragInput then
             draggingSlider = false
+            sliderDragInput = nil
         end
     end)
 
     UserInputService.InputChanged:Connect(function(input)
-        if draggingSlider and (input.UserInputType == Enum.UserInputType.MouseMovement
-            or input.UserInputType == Enum.UserInputType.Touch) then
+        if draggingSlider and input == sliderDragInput
+            and (input.UserInputType == Enum.UserInputType.MouseMovement
+                or input.UserInputType == Enum.UserInputType.Touch) then
             updateFromInput(input)
         end
     end)
@@ -5578,6 +5622,7 @@ bindConnection(UserInputService.InputBegan:Connect(function(input, gp)
 end))
 
 bindConnection(UserInputService.InputEnded:Connect(function(input)
+    endHubDrag(input)
     endCameraDrag(input)
     -- End touch camera orbit / blood manip hold
     if input.UserInputType == Enum.UserInputType.Touch then
@@ -6139,7 +6184,7 @@ end)
 
 end -- scope block 2b (aimbot + wiring · Luau local register limit)
 
-print("✅ NightFall TEST loaded — build 2026-05-25-AIMFIX+FAILSAFE (keyless)")
+print("✅ NightFall TEST loaded — build 2026-05-26-MOBILE-DRAG (keyless)")
 print("🎯 Toggle Aimbot in Combat tab → LOCK ON button appears on mobile, R/right-click on PC")
-print("💡 Top-left cube toggles the GUI | Close button ejects the script")
+print("💡 Top-left cube toggles the GUI | Drag the header bar to move on mobile")
 print("💡 Tabs: Scanner · Movement · Combat · Troll · Misc")
