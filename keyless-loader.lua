@@ -10,7 +10,7 @@ local CONFIG = {
     SCRIPT_URL = "https://raw.githubusercontent.com/quarter67/NightFall/main/homelandertest.lua",
 }
 
-local LOADER_VERSION = "1.1-keyless"
+local LOADER_VERSION = "1.2-keyless"
 print("[NightFall] Keyless loader v" .. LOADER_VERSION)
 
 if game.PlaceId ~= CONFIG.REQUIRED_PLACE_ID then
@@ -143,6 +143,10 @@ end
 if source:sub(1, 1) == "{" then
     warn("[NightFall] Got invalid response from script host.")
     return
+end
+
+if not source:find("REG-FIX-v2") and not source:find("REG-FIX") then
+    warn("[NightFall] homelandertest.lua on GitHub looks outdated — push the latest file from your PC.")
 end
 
 print("[NightFall] Loaded test build (keyless).")

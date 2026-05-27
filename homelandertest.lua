@@ -162,6 +162,16 @@ if player.Character then
     updateRoot() 
 end
 
+local function getHumanoid()
+    local character = player.Character
+    return character and character:FindFirstChildOfClass("Humanoid")
+end
+
+local function getRoot()
+    local character = player.Character
+    return character and character:FindFirstChild("HumanoidRootPart")
+end
+
 -- Hub GUI (XVC-style)
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "ScriptHub"
@@ -1593,6 +1603,10 @@ setHubToggle(UI.TempVHighlightToggle, false)
 
 UI.RefreshNowBtn = createHubButton(ScannerControls, "Refresh Scanner", "Scan workspace now")
 
+end -- scope block 1a-home (GUI · Luau local register limit)
+
+do -- scope block 1a-move (GUI · Luau local register limit)
+
 local MovementScroll = Instance.new("ScrollingFrame")
 MovementScroll.Size = UDim2.new(1, 0, 1, 0)
 MovementScroll.BackgroundTransparency = 1
@@ -1693,6 +1707,10 @@ UI.ClearESPBtn = createHubButton(CombatList, "Clear All ESP", "Remove highlights
 
 UI.BloodManipToggle = createHubButton(CombatList, "Blood Manipulator Kill", "Hold E on head · stays locked until release")
 setHubToggle(UI.BloodManipToggle, false)
+
+end -- scope block 1a-move (GUI · Luau local register limit)
+
+do -- scope block 1a-misc (GUI · Luau local register limit)
 
 local TrollScroll = Instance.new("ScrollingFrame")
 TrollScroll.Size = UDim2.new(1, 0, 1, 0)
@@ -2031,7 +2049,7 @@ setHubToggle(UI.HideMobileGuiToggle, false)
 
 switchTab("Home")
 
-end -- scope block 1a (GUI · Luau local register limit)
+end -- scope block 1a-misc (GUI · Luau local register limit)
 
 do -- scope block 1b (homelander detect · Luau local register limit)
 
@@ -2106,7 +2124,15 @@ State.detectedKillerRole = nil
 State.scanTempVParts = nil
 State.scanForHomelander = nil
 
-local function clearHighlight(plr)
+local HL = {}
+HL.KILLER_ROLES = {"HOMELANDER", "STORMFRONT"}
+HL.SCRIPT_GUI_NAMES = {
+    ScriptHub = true,
+    ScriptHubToggle = true,
+    ScriptHubMobileAim = true,
+}
+
+function HL.clearHighlight(plr)
     if State.highlights[plr] then
         State.highlights[plr]:Destroy()
         State.highlights[plr] = nil
@@ -2117,10 +2143,10 @@ local function clearHighlight(plr)
     end
 end
 
-local function createPlayerESP(plr, color, isHomelander)
+function HL.createPlayerESP(plr, color, isHomelander)
     if not plr.Character then return end
     
-    clearHighlight(plr)
+    HL.clearHighlight(plr)
     
     local success = pcall(function()
         local hl = Instance.new("Highlight")
@@ -2162,30 +2188,21 @@ local function createPlayerESP(plr, color, isHomelander)
     end
 end
 
--- Utility Functions
-local SCRIPT_GUI_NAMES = {
-    ScriptHub = true,
-    ScriptHubToggle = true,
-    ScriptHubMobileAim = true,
-}
-
-local function isScriptOwnedGui(obj)
+function HL.isScriptOwnedGui(obj)
     if not obj then return false end
     if obj:GetAttribute("ScriptHubESP") then return true end
     local gui = obj:IsA("ScreenGui") and obj or obj:FindFirstAncestorOfClass("ScreenGui")
-    return gui and SCRIPT_GUI_NAMES[gui.Name] == true
+    return gui and HL.SCRIPT_GUI_NAMES[gui.Name] == true
 end
 
-local function isOtherPlayer(plr)
+function HL.isOtherPlayer(plr)
     return plr and plr ~= player
 end
 
-local KILLER_ROLES = {"HOMELANDER", "STORMFRONT"}
-
-local function getKillerRoleFromText(text)
+function HL.getKillerRoleFromText(text)
     if type(text) ~= "string" or text == "" then return nil end
     local upper = text:upper()
-    for _, role in ipairs(KILLER_ROLES) do
+    for _, role in ipairs(HL.KILLER_ROLES) do
         if upper:find("%[" .. role .. "%]", 1, true) then
             return role
         end
@@ -2199,18 +2216,18 @@ local function getKillerRoleFromText(text)
     return nil
 end
 
-local function textHasKillerRole(text)
-    return getKillerRoleFromText(text) ~= nil
+function HL.textHasKillerRole(text)
+    return HL.getKillerRoleFromText(text) ~= nil
 end
 
-local function textHasHomelanderRole(text)
-    return textHasKillerRole(text)
+function HL.textHasHomelanderRole(text)
+    return HL.textHasKillerRole(text)
 end
 
-local function isKillerRoleName(name)
+function HL.isKillerRoleName(name)
     if not name or name == "" then return false end
     local upper = name:upper()
-    for _, role in ipairs(KILLER_ROLES) do
+    for _, role in ipairs(HL.KILLER_ROLES) do
         if upper == role then
             return true
         end
@@ -2218,7 +2235,7 @@ local function isKillerRoleName(name)
     return false
 end
 
-local function playerFromCharacterModel(model)
+function HL.playerFromCharacterModel(model)
     if not model then return nil end
     for _, plr in pairs(Players:GetPlayers()) do
         if plr.Character == model then
@@ -2228,31 +2245,31 @@ local function playerFromCharacterModel(model)
     return Players:GetPlayerFromCharacter(model)
 end
 
-local function nameLooksLikeHomelander(name)
+function HL.nameLooksLikeHomelander(name)
     if not name or name == "" then return false end
-    return textHasHomelanderRole(name)
+    return HL.textHasHomelanderRole(name)
 end
 
-local function instanceShowsHomelanderRole(obj)
+function HL.instanceShowsHomelanderRole(obj)
     if not obj then return false end
 
     if obj:IsA("TextLabel") or obj:IsA("TextButton") or obj:IsA("TextBox") then
-        return textHasKillerRole(obj.Text)
+        return HL.textHasKillerRole(obj.Text)
     end
     if obj:IsA("StringValue") then
-        return textHasKillerRole(obj.Value) or isKillerRoleName(obj.Value)
+        return HL.textHasKillerRole(obj.Value) or HL.isKillerRoleName(obj.Value)
     end
 
     return false
 end
 
-local function characterHasHomelanderTag(character)
+function HL.characterHasHomelanderTag(character)
     if not character then return false end
 
     local tagged = false
     pcall(function()
         for _, tag in ipairs(CollectionService:GetTags(character)) do
-            if isKillerRoleName(tag) or textHasKillerRole(tag) then
+            if HL.isKillerRoleName(tag) or HL.textHasKillerRole(tag) then
                 tagged = true
                 break
             end
@@ -2261,8 +2278,8 @@ local function characterHasHomelanderTag(character)
     return tagged
 end
 
-local function matchPlayerAndRoleFromText(text)
-    local role = getKillerRoleFromText(text)
+function HL.matchPlayerAndRoleFromText(text)
+    local role = HL.getKillerRoleFromText(text)
     if not role then return nil, nil end
 
     local roleTag = "%[" .. role .. "%]"
@@ -2272,7 +2289,7 @@ local function matchPlayerAndRoleFromText(text)
     if parsedName then
         parsedName = parsedName:gsub("X$", ""):gsub("[%s<]+$", ""):gsub("%s+$", "")
         for _, plr in pairs(Players:GetPlayers()) do
-            if isOtherPlayer(plr) then
+            if HL.isOtherPlayer(plr) then
                 if plr.Name == parsedName or plr.DisplayName == parsedName then
                     return plr, role
                 end
@@ -2284,8 +2301,8 @@ local function matchPlayerAndRoleFromText(text)
     end
 
     for _, plr in pairs(Players:GetPlayers()) do
-        if isOtherPlayer(plr) then
-            for _, checkRole in ipairs(KILLER_ROLES) do
+        if HL.isOtherPlayer(plr) then
+            for _, checkRole in ipairs(HL.KILLER_ROLES) do
                 local checkTag = "%[" .. checkRole .. "%]"
                 if text:find(plr.Name .. "X" .. checkTag, 1, true)
                     or text:find(plr.Name .. "%s*<%s*" .. checkTag, 1, true)
@@ -2304,22 +2321,22 @@ local function matchPlayerAndRoleFromText(text)
     return nil, nil
 end
 
-local function matchPlayerFromText(text)
-    local matchedPlayer = matchPlayerAndRoleFromText(text)
+function HL.matchPlayerFromText(text)
+    local matchedPlayer = HL.matchPlayerAndRoleFromText(text)
     return matchedPlayer
 end
 
-local function findHomelanderFromSpectateUI()
+function HL.findHomelanderFromSpectateUI()
     local playerGui = player:FindFirstChild("PlayerGui")
     if not playerGui then return nil, nil end
 
     for _, obj in pairs(playerGui:GetDescendants()) do
-        if not isScriptOwnedGui(obj)
+        if not HL.isScriptOwnedGui(obj)
             and (obj:IsA("TextLabel") or obj:IsA("TextButton") or obj:IsA("TextBox")) then
             local text = obj.Text
-            if text and textHasKillerRole(text) then
-                local matched, role = matchPlayerAndRoleFromText(text)
-                if isOtherPlayer(matched) then
+            if text and HL.textHasKillerRole(text) then
+                local matched, role = HL.matchPlayerAndRoleFromText(text)
+                if HL.isOtherPlayer(matched) then
                     return matched, role
                 end
             end
@@ -2329,22 +2346,22 @@ local function findHomelanderFromSpectateUI()
     return nil, nil
 end
 
-local function attributeLooksLikeHomelander(obj)
+function HL.attributeLooksLikeHomelander(obj)
     if not obj then return false end
     for _, attrName in ipairs({
         "Role", "Character", "Hero", "Class", "Identity",
         "CurrentRole", "RoleName", "TeamRole", "IsHomelander", "SelectedHero",
     }) do
         local value = obj:GetAttribute(attrName)
-        if value and isKillerRoleName(tostring(value)) then
+        if value and HL.isKillerRoleName(tostring(value)) then
             return true
         end
     end
     return false
 end
 
-local function getKillerRoleForPlayer(plr)
-    if not isOtherPlayer(plr) then return nil end
+function HL.getKillerRoleForPlayer(plr)
+    if not HL.isOtherPlayer(plr) then return nil end
 
     for _, container in ipairs({plr, plr.Character}) do
         if container then
@@ -2353,28 +2370,28 @@ local function getKillerRoleForPlayer(plr)
                 "CurrentRole", "RoleName", "TeamRole", "SelectedHero",
             }) do
                 local value = container:GetAttribute(attrName)
-                if value and isKillerRoleName(tostring(value)) then
+                if value and HL.isKillerRoleName(tostring(value)) then
                     return tostring(value):upper()
                 end
             end
         end
     end
 
-    if plr.Team and isKillerRoleName(plr.Team.Name) then
+    if plr.Team and HL.isKillerRoleName(plr.Team.Name) then
         return plr.Team.Name:upper()
     end
 
     local character = plr.Character
     if character then
         for _, obj in pairs(character:GetDescendants()) do
-            if not isScriptOwnedGui(obj) then
-                local role = getKillerRoleFromText(
+            if not HL.isScriptOwnedGui(obj) then
+                local role = HL.getKillerRoleFromText(
                     obj:IsA("TextLabel") and obj.Text
                     or obj:IsA("StringValue") and obj.Value
                     or ""
                 )
                 if role then return role end
-                if obj:IsA("StringValue") and isKillerRoleName(obj.Value) then
+                if obj:IsA("StringValue") and HL.isKillerRoleName(obj.Value) then
                     return obj.Value:upper()
                 end
             end
@@ -2384,23 +2401,23 @@ local function getKillerRoleForPlayer(plr)
     return nil
 end
 
-local function findHomelanderFromOverheadTags()
+function HL.findHomelanderFromOverheadTags()
     for _, plr in pairs(Players:GetPlayers()) do
-        if isOtherPlayer(plr) and plr.Character then
-            if characterHasHomelanderTag(plr.Character) or attributeLooksLikeHomelander(plr.Character) then
+        if HL.isOtherPlayer(plr) and plr.Character then
+            if HL.characterHasHomelanderTag(plr.Character) or HL.attributeLooksLikeHomelander(plr.Character) then
                 return plr
             end
 
             for _, obj in pairs(plr.Character:GetDescendants()) do
-                if not isScriptOwnedGui(obj) then
+                if not HL.isScriptOwnedGui(obj) then
                     if obj:IsA("BillboardGui") or obj:IsA("SurfaceGui") then
                         for _, child in pairs(obj:GetDescendants()) do
-                            if instanceShowsHomelanderRole(child) then
+                            if HL.instanceShowsHomelanderRole(child) then
                                 return plr
                             end
                         end
                     end
-                    if instanceShowsHomelanderRole(obj) or attributeLooksLikeHomelander(obj) then
+                    if HL.instanceShowsHomelanderRole(obj) or HL.attributeLooksLikeHomelander(obj) then
                         return plr
                     end
                 end
@@ -2411,20 +2428,20 @@ local function findHomelanderFromOverheadTags()
     return nil
 end
 
-local function findHomelanderFromLeaderstats()
+function HL.findHomelanderFromLeaderstats()
     for _, plr in pairs(Players:GetPlayers()) do
         if plr ~= player then
             for _, child in pairs(plr:GetChildren()) do
                 if child.Name:lower():find("leader") or child.Name:lower():find("stats") then
                     for _, stat in pairs(child:GetDescendants()) do
-                        if instanceShowsHomelanderRole(stat) or attributeLooksLikeHomelander(stat) then
+                        if HL.instanceShowsHomelanderRole(stat) or HL.attributeLooksLikeHomelander(stat) then
                             return plr
                         end
                     end
                 end
             end
 
-            if plr.Team and textHasKillerRole(plr.Team.Name) then
+            if plr.Team and HL.textHasKillerRole(plr.Team.Name) then
                 return plr
             end
         end
@@ -2433,16 +2450,16 @@ local function findHomelanderFromLeaderstats()
     return nil
 end
 
-local function hasExplicitHomelanderRole(plr)
-    if not isOtherPlayer(plr) then return false end
+function HL.hasExplicitHomelanderRole(plr)
+    if not HL.isOtherPlayer(plr) then return false end
 
     local success, result = pcall(function()
-        if attributeLooksLikeHomelander(plr) then
+        if HL.attributeLooksLikeHomelander(plr) then
             return true
         end
 
         for _, obj in pairs(plr:GetDescendants()) do
-            if instanceShowsHomelanderRole(obj) or attributeLooksLikeHomelander(obj) then
+            if HL.instanceShowsHomelanderRole(obj) or HL.attributeLooksLikeHomelander(obj) then
                 return true
             end
         end
@@ -2450,12 +2467,12 @@ local function hasExplicitHomelanderRole(plr)
         local character = plr.Character
         if not character then return false end
 
-        if attributeLooksLikeHomelander(character) or characterHasHomelanderTag(character) then
+        if HL.attributeLooksLikeHomelander(character) or HL.characterHasHomelanderTag(character) then
             return true
         end
 
         for _, obj in pairs(character:GetDescendants()) do
-            if instanceShowsHomelanderRole(obj) or attributeLooksLikeHomelander(obj) then
+            if HL.instanceShowsHomelanderRole(obj) or HL.attributeLooksLikeHomelander(obj) then
                 return true
             end
         end
@@ -2466,37 +2483,37 @@ local function hasExplicitHomelanderRole(plr)
     return success and result
 end
 
-local function isPlayerHomelander(plr)
-    return hasExplicitHomelanderRole(plr)
+function HL.isPlayerHomelander(plr)
+    return HL.hasExplicitHomelanderRole(plr)
 end
 
-local function resolveHomelanderTarget()
+function HL.resolveHomelanderTarget()
     if not State.homelanderESPEnabled then
         State.detectedKillerRole = nil
         return nil
     end
 
-    local spectateTarget, spectateRole = findHomelanderFromSpectateUI()
-    if isOtherPlayer(spectateTarget) then
-        State.detectedKillerRole = spectateRole or getKillerRoleForPlayer(spectateTarget) or "KILLER"
+    local spectateTarget, spectateRole = HL.findHomelanderFromSpectateUI()
+    if HL.isOtherPlayer(spectateTarget) then
+        State.detectedKillerRole = spectateRole or HL.getKillerRoleForPlayer(spectateTarget) or "KILLER"
         return spectateTarget
     end
 
-    local overheadTarget = findHomelanderFromOverheadTags()
-    if isOtherPlayer(overheadTarget) then
-        State.detectedKillerRole = getKillerRoleForPlayer(overheadTarget) or "KILLER"
+    local overheadTarget = HL.findHomelanderFromOverheadTags()
+    if HL.isOtherPlayer(overheadTarget) then
+        State.detectedKillerRole = HL.getKillerRoleForPlayer(overheadTarget) or "KILLER"
         return overheadTarget
     end
 
-    local leaderTarget = findHomelanderFromLeaderstats()
-    if isOtherPlayer(leaderTarget) then
-        State.detectedKillerRole = getKillerRoleForPlayer(leaderTarget) or "KILLER"
+    local leaderTarget = HL.findHomelanderFromLeaderstats()
+    if HL.isOtherPlayer(leaderTarget) then
+        State.detectedKillerRole = HL.getKillerRoleForPlayer(leaderTarget) or "KILLER"
         return leaderTarget
     end
 
     for _, plr in pairs(Players:GetPlayers()) do
-        if isOtherPlayer(plr) and hasExplicitHomelanderRole(plr) then
-            State.detectedKillerRole = getKillerRoleForPlayer(plr) or "KILLER"
+        if HL.isOtherPlayer(plr) and HL.hasExplicitHomelanderRole(plr) then
+            State.detectedKillerRole = HL.getKillerRoleForPlayer(plr) or "KILLER"
             return plr
         end
     end
@@ -2505,12 +2522,12 @@ local function resolveHomelanderTarget()
     return nil
 end
 
-local function setHomelanderTarget(newTarget)
+function HL.setHomelanderTarget(newTarget)
     if newTarget == player then
         newTarget = nil
     end
     if newTarget and not State.detectedKillerRole then
-        State.detectedKillerRole = getKillerRoleForPlayer(newTarget) or "KILLER"
+        State.detectedKillerRole = HL.getKillerRoleForPlayer(newTarget) or "KILLER"
     end
     if not newTarget then
         State.detectedKillerRole = nil
@@ -2519,13 +2536,13 @@ local function setHomelanderTarget(newTarget)
         if State.firstHomelander and State.firstHomelander.Character
             and State.firstHomelander.Character:FindFirstChild("HumanoidRootPart")
             and not State.highlights[State.firstHomelander] then
-            createPlayerESP(State.firstHomelander, Color3.fromRGB(255, 50, 50), true)
+            HL.createPlayerESP(State.firstHomelander, Color3.fromRGB(255, 50, 50), true)
         end
         return
     end
 
     if State.firstHomelander then
-        clearHighlight(State.firstHomelander)
+        HL.clearHighlight(State.firstHomelander)
     end
 
     State.firstHomelander = newTarget
@@ -2540,41 +2557,31 @@ local function setHomelanderTarget(newTarget)
 
     if State.firstHomelander and State.firstHomelander.Character
         and State.firstHomelander.Character:FindFirstChild("HumanoidRootPart") then
-        createPlayerESP(State.firstHomelander, Color3.fromRGB(255, 50, 50), true)
+        HL.createPlayerESP(State.firstHomelander, Color3.fromRGB(255, 50, 50), true)
     end
 end
 
 State.scanForHomelander = function()
     if not State.homelanderESPEnabled then
-        setHomelanderTarget(nil)
+        HL.setHomelanderTarget(nil)
         return
     end
 
-    setHomelanderTarget(resolveHomelanderTarget())
-end
-
-local function getHumanoid()
-    local character = player.Character
-    return character and character:FindFirstChildOfClass("Humanoid")
-end
-
-local function getRoot()
-    local character = player.Character
-    return character and character:FindFirstChild("HumanoidRootPart")
+    HL.setHomelanderTarget(HL.resolveHomelanderTarget())
 end
 
 State.__bundleA = {
-    clearHighlight = clearHighlight,
-    createPlayerESP = createPlayerESP,
+    clearHighlight = HL.clearHighlight,
+    createPlayerESP = HL.createPlayerESP,
     getHumanoid = getHumanoid,
     getRoot = getRoot,
-    isPlayerHomelander = isPlayerHomelander,
+    isPlayerHomelander = HL.isPlayerHomelander,
     setHubToggle = setHubToggle,
-    findHomelanderFromSpectateUI = findHomelanderFromSpectateUI,
-    findHomelanderFromOverheadTags = findHomelanderFromOverheadTags,
-    findHomelanderFromLeaderstats = findHomelanderFromLeaderstats,
-    getKillerRoleForPlayer = getKillerRoleForPlayer,
-    hasExplicitHomelanderRole = hasExplicitHomelanderRole,
+    findHomelanderFromSpectateUI = HL.findHomelanderFromSpectateUI,
+    findHomelanderFromOverheadTags = HL.findHomelanderFromOverheadTags,
+    findHomelanderFromLeaderstats = HL.findHomelanderFromLeaderstats,
+    getKillerRoleForPlayer = HL.getKillerRoleForPlayer,
+    hasExplicitHomelanderRole = HL.hasExplicitHomelanderRole,
 }
 
 end -- scope block 1b (homelander detect · Luau local register limit)
@@ -6324,7 +6331,7 @@ end)
 
 end -- scope block 2b (aimbot + wiring · Luau local register limit)
 
-print("✅ NightFall TEST loaded — build 2026-05-27-REG-FIX (keyless)")
+print("✅ NightFall TEST loaded — build 2026-05-27-REG-FIX-v2 (keyless)")
 print("🎯 Toggle Aimbot in Combat tab → LOCK ON button appears on mobile, R/right-click on PC")
 print("💡 Top-left cube toggles the GUI | Drag the header bar to move on mobile")
 print("💡 Tabs: Scanner · Movement · Combat · Troll · Misc")
