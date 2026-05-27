@@ -486,6 +486,45 @@ local hubDragInput = nil
 local hubDragStart = nil
 local hubDragStartPos = nil
 
+local function getMouseScreenPoint(input)
+    if input and input.UserInputType == Enum.UserInputType.Touch then
+        return Vector2.new(input.Position.X, input.Position.Y)
+    end
+    local loc = UserInputService:GetMouseLocation()
+    local ok, inset = pcall(function()
+        return GuiService:GetGuiInset()
+    end)
+    if ok and inset then
+        return Vector2.new(loc.X - inset.X, loc.Y - inset.Y)
+    end
+    return Vector2.new(loc.X, loc.Y)
+end
+
+local function getDragScaleFactor()
+    return 1 / math.max(State.guiScale or 1, 0.01)
+end
+
+local function applyHubDragDelta(delta)
+    if delta.Magnitude <= 0 then return end
+    local factor = getDragScaleFactor()
+    local pos = MainFrame.Position
+    MainFrame.Position = UDim2.new(
+        pos.X.Scale, pos.X.Offset + delta.X * factor,
+        pos.Y.Scale, pos.Y.Offset + delta.Y * factor
+    )
+    syncMainShadowPosition()
+end
+
+local function isMouseOverHeaderDrag()
+    if not UI.HeaderDrag or not UI.HeaderDrag.Parent then return false end
+    local ap = UI.HeaderDrag.AbsolutePosition
+    local asz = UI.HeaderDrag.AbsoluteSize
+    if asz.X <= 0 or asz.Y <= 0 then return false end
+    local mp = getMouseScreenPoint()
+    return mp.X >= ap.X and mp.X <= ap.X + asz.X
+        and mp.Y >= ap.Y and mp.Y <= ap.Y + asz.Y
+end
+
 local function beginHubDrag(input)
     if input.UserInputType ~= Enum.UserInputType.MouseButton1
         and input.UserInputType ~= Enum.UserInputType.Touch then
@@ -493,28 +532,22 @@ local function beginHubDrag(input)
     end
     hubDragging = true
     hubDragInput = input
-    hubDragStart = input.Position
+    hubDragStart = getMouseScreenPoint(input)
     hubDragStartPos = MainFrame.Position
 end
 
 local function updateHubDrag(input)
     if not hubDragging then return end
     if input.UserInputType == Enum.UserInputType.MouseMovement then
-        -- MouseMovement is a different InputObject than the MouseButton1 that started the drag
-        local pos = UserInputService:GetMouseLocation()
-        local delta = pos - hubDragStart
-        MainFrame.Position = UDim2.new(
-            hubDragStartPos.X.Scale, hubDragStartPos.X.Offset + delta.X,
-            hubDragStartPos.Y.Scale, hubDragStartPos.Y.Offset + delta.Y
-        )
-        syncMainShadowPosition()
+        local delta = input.Delta
+        if delta.Magnitude > 0 then
+            applyHubDragDelta(Vector2.new(delta.X, delta.Y))
+        end
     elseif input.UserInputType == Enum.UserInputType.Touch and input == hubDragInput then
-        local delta = input.Position - hubDragStart
-        MainFrame.Position = UDim2.new(
-            hubDragStartPos.X.Scale, hubDragStartPos.X.Offset + delta.X,
-            hubDragStartPos.Y.Scale, hubDragStartPos.Y.Offset + delta.Y
-        )
-        syncMainShadowPosition()
+        local pos = Vector2.new(input.Position.X, input.Position.Y)
+        local delta = pos - hubDragStart
+        applyHubDragDelta(delta)
+        hubDragStart = pos
     end
 end
 
@@ -637,12 +670,13 @@ UI.HeaderDrag.Size = UDim2.new(1, -48, 1, 0)
 UI.HeaderDrag.BackgroundTransparency = 1
 UI.HeaderDrag.Text = ""
 UI.HeaderDrag.AutoButtonColor = false
-UI.HeaderDrag.ZIndex = 10
+UI.HeaderDrag.ZIndex = 15
 UI.HeaderDrag.Active = true
+UI.HeaderDrag.Selectable = false
 UI.HeaderDrag.Parent = Header
 
 bindConnection(UI.HeaderDrag.InputBegan:Connect(function(input, gameProcessed)
-    if gameProcessed and input.UserInputType ~= Enum.UserInputType.Touch then return end
+    if input.UserInputType ~= Enum.UserInputType.Touch and gameProcessed then return end
     beginHubDrag(input)
 end))
 
@@ -650,7 +684,20 @@ bindConnection(UI.HeaderDrag.InputEnded:Connect(function(input)
     endHubDrag(input)
 end))
 
--- Desktop can also drag from the title area labels
+-- Fallback: some executors don't fire Gui InputBegan reliably — use global mouse pick
+bindConnection(UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if hubDragging then return end
+    if input.UserInputType ~= Enum.UserInputType.MouseButton1
+        and input.UserInputType ~= Enum.UserInputType.Touch then
+        return
+    end
+    if input.UserInputType == Enum.UserInputType.MouseButton1 and gameProcessed then
+        return
+    end
+    if isMouseOverHeaderDrag() then
+        beginHubDrag(input)
+    end
+end))
 for _, dragTarget in ipairs({ HubTitle, HubSubtitle, HeaderAccent }) do
     dragTarget.Active = false
 end
@@ -1721,7 +1768,7 @@ setHubToggle(UI.HomelanderESPToggle, false)
 UI.TeamESPToggle = createHubButton(CombatList, "Team ESP", "Rescans players every 5 seconds")
 setHubToggle(UI.TeamESPToggle, false)
 
-UI.AimbotToggle = createHubButton(CombatList, "Aimbot", "Mobile: tap LOCK ON · PC: hold right-click · locks head")
+UI.AimbotToggle = createHubButton(CombatList, "Aimbot", "PC: toggle ON to lock · Mobile: tap LOCK ON button")
 setHubToggle(UI.AimbotToggle, false)
 
 UI.MobileAimDragToggle = createHubButton(CombatList, "Unlock LOCK ON Button", "Drag the LOCK ON button to reposition it")
@@ -5745,12 +5792,12 @@ local function aimMouseAtHead(part, useScreenCenter, dt)
     local worldPos = getPredictedPartWorldPos(part, AIMBOT_PREDICT_TIME)
     if not worldPos then return false end
 
-    -- Mobile LOCK ON: rotate camera (mousemoverel has no effect on touch devices)
-    if useScreenCenter then
+    -- Camera aim works on mobile and PC; mousemoverel is blocked in most games/executors
+    if useScreenCenter or not State.isMobile then
         return aimCameraAtWorldPos(worldPos, dt)
     end
 
-    -- Desktop right-click: nudge mouse cursor toward the target's screen position
+    -- Mobile fallback path (non-lock-on)
     local partScreen = worldToScreen(worldPos)
     if not partScreen then
         return aimCameraAtWorldPos(worldPos, dt)
@@ -6000,18 +6047,28 @@ bindConnection(RunService.RenderStepped:Connect(function(dt)
     -- FOV circle: visible while the LOCK ON button is being held
     if UI.FovCircle then UI.FovCircle.Visible = State.holdingMobileAim end
 
-    -- Aimbot: sticky mouse lock on head (does not retarget while holding aim)
-    local aiming = State.holdingRightClick or State.holdingMobileAim
-    if State.aimbotEnabled and aiming and refreshCamera()
+    -- Aimbot: PC = active whenever toggled on · Mobile = tap LOCK ON
+    local aiming = false
+    if State.aimbotEnabled then
+        if State.isMobile then
+            aiming = State.holdingMobileAim
+        else
+            aiming = true
+        end
+    end
+
+    if aiming and refreshCamera()
         and not State.freecamEnabled and not State.spectating then
         pcall(function()
-            local useCenter = State.holdingMobileAim
+            local useCenter = State.isMobile and State.holdingMobileAim
             local _, part = updateAimbotLock(useCenter)
             if part then
                 aimMouseAtHead(part, useCenter, dt)
             end
         end)
-    elseif not aiming then
+    elseif not State.aimbotEnabled then
+        clearAimbotLock()
+    elseif State.isMobile and not State.holdingMobileAim then
         clearAimbotLock()
     end
 end))
@@ -6433,7 +6490,7 @@ end
 
 end -- scope block 2d (aimbot + wiring · Luau local register limit)
 
-print("✅ NightFall TEST loaded — build 2026-05-28-UNIFIED-FIX (keyless)")
-print("🎯 Combat → enable Aimbot → hold right-click in-game (Settings: swap if buttons reversed)")
+print("✅ NightFall TEST loaded — build 2026-05-28-DRAG-AIM-v2 (keyless)")
+print("🎯 Combat → toggle Aimbot ON (PC locks automatically · mobile tap LOCK ON)")
 print("💡 Drag the NightFall header bar to move the GUI | Top-left cube toggles visibility")
 print("💡 Tabs: Scanner · Movement · Combat · Troll · Misc")
