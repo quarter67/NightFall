@@ -901,5 +901,22 @@ end
 setLoadingMessage("Starting NightFall...")
 task.wait(0.05)
 
-loadstring(downloadedSource)()
+local compile = loadstring or load
+if type(compile) ~= "function" then
+    destroyLoadingOverlay()
+    warn("[NightFall] Your executor does not support loadstring/load — cannot run the script.")
+    return
+end
+
+local runScript, compileErr = compile(downloadedSource)
+if type(runScript) ~= "function" then
+    destroyLoadingOverlay()
+    warn("[NightFall] Failed to compile script: " .. tostring(compileErr or runScript))
+    return
+end
+
+local ok, runErr = pcall(runScript)
 destroyLoadingOverlay()
+if not ok then
+    warn("[NightFall] Script error: " .. tostring(runErr))
+end

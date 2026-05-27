@@ -108,4 +108,20 @@ if source:sub(1, 1) == "{" then
 end
 
 print("[NightFall] Loaded test build (keyless).")
-loadstring(source)()
+
+local compile = loadstring or load
+if type(compile) ~= "function" then
+    warn("[NightFall] Your executor does not support loadstring/load — cannot run the script.")
+    return
+end
+
+local runScript, compileErr = compile(source)
+if type(runScript) ~= "function" then
+    warn("[NightFall] Failed to compile script: " .. tostring(compileErr or runScript))
+    return
+end
+
+local ok, runErr = pcall(runScript)
+if not ok then
+    warn("[NightFall] Script error: " .. tostring(runErr))
+end
