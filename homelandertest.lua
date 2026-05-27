@@ -1423,11 +1423,11 @@ do
 
 local HomePage = createPage("Home")
 local ScannerPage = createPage("Scanner")
-local MovementPage = createPage("Movement")
-local CombatPage = createPage("Combat")
-local TrollPage = createPage("Troll")
-local MiscPage = createPage("Misc")
-local SettingsPage = createPage("Settings")
+createPage("Movement")
+createPage("Combat")
+createPage("Troll")
+createPage("Misc")
+createPage("Settings")
 
 State.walkSpeed = 16
 State.jumpPower = 50
@@ -1616,7 +1616,7 @@ MovementScroll.ScrollBarImageColor3 = COLORS.border
 MovementScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
 MovementScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
 MovementScroll.ScrollingDirection = Enum.ScrollingDirection.Y
-MovementScroll.Parent = MovementPage
+MovementScroll.Parent = pages.Movement
 
 local MovementListPad = Instance.new("UIPadding")
 MovementListPad.PaddingTop = UDim.new(0, 4)
@@ -1668,7 +1668,7 @@ CombatScroll.ScrollBarImageColor3 = COLORS.border
 CombatScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
 CombatScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
 CombatScroll.ScrollingDirection = Enum.ScrollingDirection.Y
-CombatScroll.Parent = CombatPage
+CombatScroll.Parent = pages.Combat
 
 local CombatListPad = Instance.new("UIPadding")
 CombatListPad.PaddingTop = UDim.new(0, 4)
@@ -1721,7 +1721,7 @@ TrollScroll.ScrollBarImageColor3 = COLORS.border
 TrollScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
 TrollScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
 TrollScroll.ScrollingDirection = Enum.ScrollingDirection.Y
-TrollScroll.Parent = TrollPage
+TrollScroll.Parent = pages.Troll
 
 local TrollListPad = Instance.new("UIPadding")
 TrollListPad.PaddingTop = UDim.new(0, 4)
@@ -1764,7 +1764,7 @@ MiscScroll.BackgroundTransparency = 1
 MiscScroll.BorderSizePixel = 0
 MiscScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
 MiscScroll.ClipsDescendants = true
-MiscScroll.Parent = MiscPage
+MiscScroll.Parent = pages.Misc
 setupMobileScroll(MiscScroll)
 
 local MiscContent = Instance.new("Frame")
@@ -1992,7 +1992,7 @@ SettingsScroll.ScrollBarImageColor3 = COLORS.border
 SettingsScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
 SettingsScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
 SettingsScroll.ScrollingDirection = Enum.ScrollingDirection.Y
-SettingsScroll.Parent = SettingsPage
+SettingsScroll.Parent = pages.Settings
 
 local SettingsListPad = Instance.new("UIPadding")
 SettingsListPad.PaddingTop = UDim.new(0, 4)
@@ -6351,7 +6351,7 @@ end)
 
 end -- scope block 2d (aimbot + wiring · Luau local register limit)
 
-print("✅ NightFall TEST loaded — build 2026-05-27-REG-FIX-v3 (keyless)")
+print("✅ NightFall TEST loaded — build 2026-05-27-GUI-PAGES-FIX (keyless)")
 print("🎯 Toggle Aimbot in Combat tab → LOCK ON button appears on mobile, R/right-click on PC")
 print("💡 Top-left cube toggles the GUI | Drag the header bar to move on mobile")
 print("💡 Tabs: Scanner · Movement · Combat · Troll · Misc")
