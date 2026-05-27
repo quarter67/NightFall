@@ -858,8 +858,13 @@ local function switchTab(name)
         data.icon.TextColor3 = selected and COLORS.accentLight or COLORS.textMuted
     end
     -- Auto-refresh player list whenever Misc tab is opened
-    if name == "Misc" and State.__bundleA and State.__bundleA.refreshMiscPlayerList then
-        State.__bundleA.refreshMiscPlayerList()
+    if name == "Misc" then
+        if State.__miscCollapseAll then
+            State.__miscCollapseAll()
+        end
+        if State.__bundleA and State.__bundleA.refreshMiscPlayerList then
+            State.__bundleA.refreshMiscPlayerList()
+        end
     end
 end
 
@@ -1257,13 +1262,22 @@ local function scrollToVisible(scroll, element, padding)
         local offset = element.AbsolutePosition.Y - scroll.AbsolutePosition.Y + scroll.CanvasPosition.Y
         local viewH = scroll.AbsoluteSize.Y
         local elemH = element.AbsoluteSize.Y
-        if offset + elemH > scroll.CanvasPosition.Y + viewH - padding then
-            scroll.CanvasPosition = Vector2.new(0, offset + elemH - viewH + padding)
-        elseif offset < scroll.CanvasPosition.Y + padding then
-            scroll.CanvasPosition = Vector2.new(0, math.max(0, offset - padding))
+        local canvasH = scroll.AbsoluteCanvasSize.Y
+        local maxScroll = math.max(0, canvasH - viewH)
+        local targetTop = offset - padding
+        local targetBottom = offset + elemH - viewH + padding
+
+        if elemH > viewH - padding * 2 then
+            scroll.CanvasPosition = Vector2.new(0, math.clamp(targetTop, 0, maxScroll))
+        elseif targetBottom > scroll.CanvasPosition.Y then
+            scroll.CanvasPosition = Vector2.new(0, math.clamp(targetBottom, 0, maxScroll))
+        elseif targetTop < scroll.CanvasPosition.Y then
+            scroll.CanvasPosition = Vector2.new(0, math.clamp(targetTop, 0, maxScroll))
         end
     end)
 end
+
+local miscFoldSetters = {}
 
 local function createMiscFold(parent, title, startExpanded, pageScroll)
     local headerH = State.isMobile and 44 or 40
@@ -1320,26 +1334,43 @@ local function createMiscFold(parent, title, startExpanded, pageScroll)
     body.Size = UDim2.new(1, 0, 0, 0)
     body.Position = UDim2.new(0, 0, 0, headerH + 4)
     body.BackgroundTransparency = 1
-    body.ClipsDescendants = false
+    body.ClipsDescendants = true
+    body.Visible = false
     body.Parent = section
 
     local bodyLayout = Instance.new("UIListLayout")
     bodyLayout.Padding = UDim.new(0, 8)
     bodyLayout.Parent = body
 
-    local expanded = startExpanded == true
+    local expanded = false
 
     local function refreshSectionSize()
         local bodyHeight = expanded and bodyLayout.AbsoluteContentSize.Y or 0
         body.Size = UDim2.new(1, 0, 0, bodyHeight)
+        body.Visible = expanded or bodyHeight > 0
         section.Size = UDim2.new(1, 0, 0, headerH + (expanded and bodyHeight + 4 or 0))
     end
 
     bodyLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(refreshSectionSize)
 
-    local function setExpanded(value)
-        expanded = value
+    body.ChildAdded:Connect(function(child)
+        if not child:IsA("UIListLayout") then
+            child.Visible = expanded
+        end
+    end)
+
+    local setExpanded
+    setExpanded = function(value)
+        if value and State.isMobile then
+            for _, fn in ipairs(miscFoldSetters) do
+                if fn ~= setExpanded then
+                    fn(false)
+                end
+            end
+        end
+        expanded = value == true
         arrow.Text = expanded and "▾" or "▸"
+        body.Visible = expanded
         for _, child in ipairs(body:GetChildren()) do
             if not child:IsA("UIListLayout") then
                 child.Visible = expanded
@@ -1347,12 +1378,18 @@ local function createMiscFold(parent, title, startExpanded, pageScroll)
         end
         refreshSectionSize()
         if expanded and pageScroll then
-            scrollToVisible(pageScroll, section, 16)
-            task.delay(0.12, function()
-                scrollToVisible(pageScroll, section, 16)
+            scrollToVisible(pageScroll, section, 20)
+            task.delay(0.15, function()
+                scrollToVisible(pageScroll, section, 20)
+            end)
+            task.delay(0.35, function()
+                refreshSectionSize()
+                scrollToVisible(pageScroll, section, 20)
             end)
         end
     end
+
+    table.insert(miscFoldSetters, setExpanded)
 
     header.MouseButton1Click:Connect(function()
         setExpanded(not expanded)
@@ -1365,9 +1402,9 @@ local function createMiscFold(parent, title, startExpanded, pageScroll)
         tween(header, { BackgroundColor3 = COLORS.surface })
     end)
 
-    setExpanded(expanded)
+    setExpanded(startExpanded == true)
 
-    return section, body
+    return section, body, setExpanded
 end
 
 createTab("Home", "⌂")
@@ -1717,32 +1754,25 @@ MiscScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
 MiscScroll.Parent = MiscPage
 setupMobileScroll(MiscScroll)
 
+local MiscContent = Instance.new("Frame")
+MiscContent.Name = "MiscContent"
+MiscContent.Size = UDim2.new(1, 0, 0, 0)
+MiscContent.AutomaticSize = Enum.AutomaticSize.Y
+MiscContent.BackgroundTransparency = 1
+MiscContent.Parent = MiscScroll
+
 local MiscListPad = Instance.new("UIPadding")
 MiscListPad.PaddingTop = UDim.new(0, 4)
-MiscListPad.PaddingBottom = UDim.new(0, State.isMobile and 24 or 8)
-MiscListPad.PaddingRight = UDim.new(0, 6)
-MiscListPad.PaddingLeft = UDim.new(0, 2)
-MiscListPad.Parent = MiscScroll
-
-local MiscList = Instance.new("Frame")
-MiscList.Name = "MiscList"
-MiscList.Size = UDim2.new(1, -8, 0, 0)
-MiscList.AutomaticSize = Enum.AutomaticSize.Y
-MiscList.BackgroundTransparency = 1
-MiscList.Parent = MiscScroll
+MiscListPad.PaddingBottom = UDim.new(0, State.isMobile and 80 or 12)
+MiscListPad.PaddingRight = UDim.new(0, 8)
+MiscListPad.PaddingLeft = UDim.new(0, 4)
+MiscListPad.Parent = MiscContent
 
 local MiscLayout = Instance.new("UIListLayout")
 MiscLayout.Padding = UDim.new(0, 8)
-MiscLayout.Parent = MiscList
+MiscLayout.Parent = MiscContent
 
-MiscLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-    local contentH = MiscLayout.AbsoluteContentSize.Y
-    MiscList.Size = UDim2.new(1, -8, 0, contentH)
-    local padT = MiscListPad.PaddingTop.Offset + MiscListPad.PaddingBottom.Offset
-    MiscScroll.CanvasSize = UDim2.new(0, 0, 0, contentH + padT + 8)
-end)
-
-local _, SpectateBody = createMiscFold(MiscList, "Spectate", not State.isMobile, MiscScroll)
+local _, SpectateBody = createMiscFold(MiscContent, "Spectate", false, MiscScroll)
 
 local MiscSubLabel = Instance.new("TextLabel")
 MiscSubLabel.Size = UDim2.new(1, 0, 0, 18)
@@ -1799,11 +1829,11 @@ UI.RefreshSpectateListBtn = createHubButton(SpectateBody, "Refresh Player List",
 UI.SpectateBtn = createHubButton(SpectateBody, "Spectate", "Right-drag orbit · scroll zoom")
 UI.StopSpectateBtn = createHubButton(SpectateBody, "Stop Spectate", "Return camera to you")
 
-local _, FlingBody = createMiscFold(MiscList, "Fling", false, MiscScroll)
+local _, FlingBody = createMiscFold(MiscContent, "Fling", false, MiscScroll)
 
 UI.FlingSelectedBtn = createHubButton(FlingBody, "Fling Selected", "SkidFling · turn off noclip/desync first")
 
-local _, FreecamBody = createMiscFold(MiscList, "Freecam", false, MiscScroll)
+local _, FreecamBody = createMiscFold(MiscContent, "Freecam", false, MiscScroll)
 
 UI.FreecamToggle = createHubButton(FreecamBody, "Freecam", "WASD move · right-drag look · scroll speed")
 setHubToggle(UI.FreecamToggle, false)
@@ -1819,7 +1849,7 @@ UI.FreecamSpeedSlider, UI.setFreecamSpeedSliderValue = createHubSlider(
     end
 )
 
-local _, EffectsBody = createMiscFold(MiscList, "Effects", false, MiscScroll)
+local _, EffectsBody = createMiscFold(MiscContent, "Effects", false, MiscScroll)
 
 UI.RemoveBloodManipEffectsToggle = createHubButton(
     EffectsBody,
@@ -1828,7 +1858,7 @@ UI.RemoveBloodManipEffectsToggle = createHubButton(
 )
 setHubToggle(UI.RemoveBloodManipEffectsToggle, false)
 
-local _, AimbotBody = createMiscFold(MiscList, "Aimbot", false, MiscScroll)
+local _, AimbotBody = createMiscFold(MiscContent, "Aimbot", false, MiscScroll)
 
 local AimbotDesc = Instance.new("TextLabel")
 AimbotDesc.Size = UDim2.new(1, 0, 0, 32)
@@ -1893,7 +1923,7 @@ UI.AimbotPartTorsoBtn.MouseButton1Click:Connect(function()
     setAimbotTargetPartPreset("UpperTorso")
 end)
 
-local _, FailsafeBody = createMiscFold(MiscList, "Failsafe", false, MiscScroll)
+local _, FailsafeBody = createMiscFold(MiscContent, "Failsafe", false, MiscScroll)
 
 local FailsafeDesc = Instance.new("TextLabel")
 FailsafeDesc.Size = UDim2.new(1, 0, 0, 32)
@@ -1925,6 +1955,19 @@ UI.FailsafeSlider, UI.setFailsafeSliderValue = createHubSlider(
         saveFailsafeSettings()
     end
 )
+
+-- All Misc sections start collapsed (children are added after fold creation)
+for _, collapse in ipairs(miscFoldSetters) do
+    collapse(false)
+end
+MiscScroll.CanvasPosition = Vector2.new(0, 0)
+
+State.__miscCollapseAll = function()
+    for _, collapseFn in ipairs(miscFoldSetters) do
+        collapseFn(false)
+    end
+    MiscScroll.CanvasPosition = Vector2.new(0, 0)
+end
 
 local SettingsScroll = Instance.new("ScrollingFrame")
 SettingsScroll.Size = UDim2.new(1, 0, 1, 0)
@@ -6281,7 +6324,7 @@ end)
 
 end -- scope block 2b (aimbot + wiring · Luau local register limit)
 
-print("✅ NightFall TEST loaded — build 2026-05-27-MISC-MOBILE (keyless)")
+print("✅ NightFall TEST loaded — build 2026-05-27-MISC-FOLD-FIX (keyless)")
 print("🎯 Toggle Aimbot in Combat tab → LOCK ON button appears on mobile, R/right-click on PC")
 print("💡 Top-left cube toggles the GUI | Drag the header bar to move on mobile")
 print("💡 Tabs: Scanner · Movement · Combat · Troll · Misc")
