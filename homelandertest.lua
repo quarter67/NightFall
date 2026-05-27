@@ -2031,6 +2031,10 @@ setHubToggle(UI.HideMobileGuiToggle, false)
 
 switchTab("Home")
 
+end -- scope block 1a (GUI · Luau local register limit)
+
+do -- scope block 1b (homelander detect · Luau local register limit)
+
 State.autoRefreshEnabled = true
 State.homelanderESPEnabled = false
 State.teamESPEnabled = false
@@ -2573,7 +2577,7 @@ State.__bundleA = {
     hasExplicitHomelanderRole = hasExplicitHomelanderRole,
 }
 
-end -- scope block 1 (Luau local register limit)
+end -- scope block 1b (homelander detect · Luau local register limit)
 
 do -- scope block 1e (desync + movement · Luau local register limit)
 
@@ -6320,7 +6324,7 @@ end)
 
 end -- scope block 2b (aimbot + wiring · Luau local register limit)
 
-print("✅ NightFall TEST loaded — build 2026-05-27-PC-COMPAT (keyless)")
+print("✅ NightFall TEST loaded — build 2026-05-27-REG-FIX (keyless)")
 print("🎯 Toggle Aimbot in Combat tab → LOCK ON button appears on mobile, R/right-click on PC")
 print("💡 Top-left cube toggles the GUI | Drag the header bar to move on mobile")
 print("💡 Tabs: Scanner · Movement · Combat · Troll · Misc")
