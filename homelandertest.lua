@@ -6433,7 +6433,7 @@ end
 
 end -- scope block 2d (aimbot + wiring · Luau local register limit)
 
-print("✅ NightFall TEST loaded — build 2026-05-27-DRAG-AIM-FIX (keyless)")
+print("✅ NightFall TEST loaded — build 2026-05-28-UNIFIED-FIX (keyless)")
 print("🎯 Combat → enable Aimbot → hold right-click in-game (Settings: swap if buttons reversed)")
 print("💡 Drag the NightFall header bar to move the GUI | Top-left cube toggles visibility")
 print("💡 Tabs: Scanner · Movement · Combat · Troll · Misc")

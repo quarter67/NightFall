@@ -18,7 +18,7 @@ local CONFIG = {
     MAX_ATTEMPTS = 5,
 }
 
-local LOADER_VERSION = "3.9-daki-delta"
+local LOADER_VERSION = "4.0-unified"
 print("[NightFall] Loader v" .. LOADER_VERSION)
 
 local COLORS = {
@@ -901,14 +901,30 @@ end
 setLoadingMessage("Starting NightFall...")
 task.wait(0.05)
 
-local compile = loadstring or load
+local function getCompileFn()
+    if type(loadstring) == "function" then return loadstring end
+    if type(load) == "function" then return load end
+    if getgenv then
+        local env = getgenv()
+        if env and type(env.loadstring) == "function" then return env.loadstring end
+        if env and type(env.load) == "function" then return env.load end
+    end
+    if getrenv then
+        local env = getrenv()
+        if env and type(env.loadstring) == "function" then return env.loadstring end
+        if env and type(env.load) == "function" then return env.load end
+    end
+    return nil
+end
+
+local compile = getCompileFn()
 if type(compile) ~= "function" then
     destroyLoadingOverlay()
     warn("[NightFall] Your executor does not support loadstring/load — cannot run the script.")
     return
 end
 
-local runScript, compileErr = compile(downloadedSource)
+local runScript, compileErr = compile(downloadedSource, "NightFall")
 if type(runScript) ~= "function" then
     destroyLoadingOverlay()
     warn("[NightFall] Failed to compile script: " .. tostring(compileErr or runScript))

@@ -17,7 +17,7 @@ local LOCAL_PATHS = {
     "workspace/homelandertest.lua",
 }
 
-local LOADER_VERSION = "1.4-keyless"
+local LOADER_VERSION = "1.5-keyless"
 print("[NightFall] Keyless loader v" .. LOADER_VERSION)
 
 if game.PlaceId ~= CONFIG.REQUIRED_PLACE_ID then
@@ -33,7 +33,7 @@ local HttpService = game:GetService("HttpService")
 
 local DEFAULT_HEADERS = {
     ["Accept"] = "text/plain, application/json, */*",
-    ["User-Agent"] = "NightFallKeyless/1.4",
+    ["User-Agent"] = "NightFallKeyless/1.5",
 }
 
 local function getRequestFn()
@@ -164,7 +164,8 @@ if source then
     print("[NightFall] Loading local homelandertest.lua")
 else
     print("[NightFall] Downloading from URL")
-    source = httpGet(CONFIG.SCRIPT_URL)
+    local url = CONFIG.SCRIPT_URL .. "?t=" .. tostring(os.time())
+    source = httpGet(url)
 
     if not source or source == "" then
         warn("[NightFall] Failed to load homelandertest.lua — place it in your executor workspace or check HTTP settings.")
