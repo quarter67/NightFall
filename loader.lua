@@ -18,7 +18,7 @@ local CONFIG = {
     MAX_ATTEMPTS = 5,
 }
 
-local LOADER_VERSION = "3.6-daki-delta"
+local LOADER_VERSION = "3.8-daki-delta"
 print("[NightFall] Loader v" .. LOADER_VERSION)
 
 local COLORS = {
@@ -99,7 +99,7 @@ local HWID = getHwid()
 
 local DEFAULT_HEADERS = {
     ["Accept"] = "application/json, text/plain, */*",
-    ["User-Agent"] = "NightFallLoader/3.6",
+    ["User-Agent"] = "NightFallLoader/3.7",
 }
 
 local function mergeHeaders(custom)
@@ -308,6 +308,7 @@ if not API_BASE_URL then
 end
 
 print("[NightFall] API → " .. API_BASE_URL)
+showLoadingOverlay("Connecting to key server...")
 
 local function fetchGetKeyUrl()
     local data, err = httpRequestJson(
@@ -326,6 +327,163 @@ local function fetchGetKeyUrl()
     end
 
     return nil, data.error or "Get key failed"
+end
+
+local function getGuiParent()
+    local player = Players.LocalPlayer
+    if player then
+        local playerGui = player:FindFirstChild("PlayerGui")
+        if playerGui then
+            return playerGui
+        end
+    end
+    return game:GetService("CoreGui")
+end
+
+local LoadingOverlay = nil
+
+local function setLoadingMessage(text)
+    if LoadingOverlay and LoadingOverlay.subtitle then
+        LoadingOverlay.subtitle.Text = text or "Please wait..."
+    end
+end
+
+local function showLoadingOverlay(message)
+    message = message or "Please wait..."
+
+    if LoadingOverlay and LoadingOverlay.gui then
+        setLoadingMessage(message)
+        LoadingOverlay.gui.Enabled = true
+        return LoadingOverlay
+    end
+
+    local gui = Instance.new("ScreenGui")
+    gui.Name = "NightFallLoaderOverlay"
+    gui.ResetOnSpawn = false
+    gui.IgnoreGuiInset = true
+    gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    gui.DisplayOrder = 200
+    gui.Parent = getGuiParent()
+
+    local backdrop = Instance.new("Frame")
+    backdrop.Name = "Backdrop"
+    backdrop.Size = UDim2.fromScale(1, 1)
+    backdrop.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    backdrop.BackgroundTransparency = 0.45
+    backdrop.BorderSizePixel = 0
+    backdrop.Active = false
+    backdrop.Parent = gui
+
+    local card = Instance.new("Frame")
+    card.Name = "LoadingCard"
+    card.AnchorPoint = Vector2.new(0.5, 0.5)
+    card.Position = UDim2.fromScale(0.5, 0.5)
+    card.Size = UDim2.new(0, 320, 0, 140)
+    card.BackgroundColor3 = COLORS.bg
+    card.BackgroundTransparency = 0.05
+    card.BorderSizePixel = 0
+    card.Active = false
+    card.Parent = gui
+
+    local cardCorner = Instance.new("UICorner")
+    cardCorner.CornerRadius = UDim.new(0, 18)
+    cardCorner.Parent = card
+
+    local cardStroke = Instance.new("UIStroke")
+    cardStroke.Color = COLORS.border
+    cardStroke.Transparency = 0.35
+    cardStroke.Parent = card
+
+    local accent = Instance.new("Frame")
+    accent.Size = UDim2.new(0, 4, 0, 36)
+    accent.Position = UDim2.new(0, 18, 0, 24)
+    accent.BackgroundColor3 = COLORS.accent
+    accent.BorderSizePixel = 0
+    accent.Parent = card
+
+    local accentCorner = Instance.new("UICorner")
+    accentCorner.CornerRadius = UDim.new(1, 0)
+    accentCorner.Parent = accent
+
+    local title = Instance.new("TextLabel")
+    title.Name = "Title"
+    title.Size = UDim2.new(1, -40, 0, 34)
+    title.Position = UDim2.new(0, 32, 0, 22)
+    title.BackgroundTransparency = 1
+    title.Font = Enum.Font.GothamBold
+    title.TextSize = 28
+    title.TextColor3 = COLORS.text
+    title.TextXAlignment = Enum.TextXAlignment.Left
+    title.Text = "Loading"
+    title.Parent = card
+
+    local subtitle = Instance.new("TextLabel")
+    subtitle.Name = "Subtitle"
+    subtitle.Size = UDim2.new(1, -40, 0, 44)
+    subtitle.Position = UDim2.new(0, 32, 0, 62)
+    subtitle.BackgroundTransparency = 1
+    subtitle.Font = Enum.Font.GothamMedium
+    subtitle.TextSize = 13
+    subtitle.TextColor3 = COLORS.textMuted
+    subtitle.TextXAlignment = Enum.TextXAlignment.Left
+    subtitle.TextYAlignment = Enum.TextYAlignment.Top
+    subtitle.TextWrapped = true
+    subtitle.Text = message
+    subtitle.Parent = card
+
+    local dots = Instance.new("TextLabel")
+    dots.Name = "Dots"
+    dots.Size = UDim2.new(1, -40, 0, 20)
+    dots.Position = UDim2.new(0, 32, 1, -34)
+    dots.BackgroundTransparency = 1
+    dots.Font = Enum.Font.GothamBold
+    dots.TextSize = 18
+    dots.TextColor3 = COLORS.accentLight
+    dots.TextXAlignment = Enum.TextXAlignment.Left
+    dots.Text = "..."
+    dots.Parent = card
+
+    local animRunning = true
+    task.spawn(function()
+        local frames = { ".", "..", "..." }
+        local index = 1
+        while animRunning and dots and dots.Parent do
+            dots.Text = frames[index]
+            index = index % #frames + 1
+            task.wait(0.45)
+        end
+    end)
+
+    LoadingOverlay = {
+        gui = gui,
+        subtitle = subtitle,
+        stopAnimation = function()
+            animRunning = false
+        end,
+    }
+
+    return LoadingOverlay
+end
+
+local function hideLoadingOverlay()
+    if LoadingOverlay and LoadingOverlay.gui then
+        if LoadingOverlay.stopAnimation then
+            LoadingOverlay.stopAnimation()
+        end
+        LoadingOverlay.gui.Enabled = false
+    end
+end
+
+local function destroyLoadingOverlay()
+    if LoadingOverlay and LoadingOverlay.gui then
+        if LoadingOverlay.stopAnimation then
+            LoadingOverlay.stopAnimation()
+        end
+        pcall(function()
+            LoadingOverlay.gui:Destroy()
+        end)
+        LoadingOverlay = nil
+    end
 end
 
 local function formatKeyError(code)
@@ -420,9 +578,10 @@ local function downloadScript(key)
 end
 
 local function createKeyUI()
-    local CoreGui = game:GetService("CoreGui")
+    hideLoadingOverlay()
+
     local TweenService = game:GetService("TweenService")
-    local player = Players.LocalPlayer
+    local keyReady = Instance.new("BindableEvent")
 
     local function tween(obj, props, duration)
         TweenService:Create(
@@ -454,7 +613,7 @@ local function createKeyUI()
     gui.ResetOnSpawn = false
     gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
     gui.DisplayOrder = 100
-    gui.Parent = CoreGui
+    gui.Parent = getGuiParent()
 
     local root = Instance.new("Frame")
     root.Size = UDim2.new(0, 420, 0, 300)
@@ -594,19 +753,21 @@ local function createKeyUI()
     getKeyBtn.MouseButton1Click:Connect(function()
         setStatus("Creating key link...", COLORS.textMuted)
 
-        local link, err = fetchGetKeyUrl()
-        if link and link ~= "" then
-            if setclipboard then
-                setclipboard(link)
-                setStatus("Key link copied — paste in browser.", COLORS.success)
+        task.spawn(function()
+            local link, err = fetchGetKeyUrl()
+            if link and link ~= "" then
+                if setclipboard then
+                    setclipboard(link)
+                    setStatus("Key link copied — paste in browser.", COLORS.success)
+                else
+                    setStatus("Open: " .. API_BASE_URL, COLORS.accentLight)
+                end
+                print("[NightFall] Get key:", link)
             else
-                setStatus("Open: " .. API_BASE_URL, COLORS.accentLight)
+                setStatus("Get key failed: " .. tostring(err), COLORS.danger)
+                warn("[NightFall] get-link failed:", tostring(err))
             end
-            print("[NightFall] Get key:", link)
-        else
-            setStatus("Get key failed: " .. tostring(err), COLORS.danger)
-            warn("[NightFall] get-link failed:", tostring(err))
-        end
+        end)
     end)
 
     local function trySubmit()
@@ -618,6 +779,7 @@ local function createKeyUI()
             done = true
             task.delay(1.5, function()
                 gui:Destroy()
+                keyReady:Fire(nil)
             end)
             return
         end
@@ -626,61 +788,94 @@ local function createKeyUI()
         submitBtn.Text = "Checking..."
         submitBtn.AutoButtonColor = false
 
-        local trimmed = box.Text:gsub("^%s+", ""):gsub("%s+$", ""):upper()
-        local valid, keyOrErr = validateKey(trimmed)
-        if valid then
-            resolvedKey = keyOrErr
-            fsWrite(CONFIG.KEY_CACHE_PATH, resolvedKey)
-            getgenv().SCRIPT_KEY = resolvedKey
-            setStatus("Key accepted. Loading NightFall...", COLORS.success)
-            submitBtn.Text = "Success"
-            done = true
-            task.delay(0.35, function()
-                gui:Destroy()
-            end)
-            return
-        end
+        task.spawn(function()
+            local trimmed = box.Text:gsub("^%s+", ""):gsub("%s+$", ""):upper()
+            local valid, keyOrErr = validateKey(trimmed)
 
-        setStatus(keyOrErr, COLORS.danger)
-        submitBtn.Text = "Continue"
+            if valid then
+                resolvedKey = keyOrErr
+                fsWrite(CONFIG.KEY_CACHE_PATH, resolvedKey)
+                getgenv().SCRIPT_KEY = resolvedKey
+                setStatus("Key accepted. Loading NightFall...", COLORS.success)
+                submitBtn.Text = "Success"
+                done = true
+                task.delay(0.35, function()
+                    gui:Destroy()
+                    keyReady:Fire(resolvedKey)
+                end)
+                return
+            end
+
+            setStatus(keyOrErr, COLORS.danger)
+            submitBtn.Text = "Continue"
+        end)
     end
 
     submitBtn.MouseButton1Click:Connect(trySubmit)
 
-    while not done do
-        task.wait(0.1)
+    return keyReady.Event:Wait()
+end
+
+local function acquireKey()
+    showLoadingOverlay("Checking saved key...")
+
+    local cachedKey = fsRead(CONFIG.KEY_CACHE_PATH)
+    if cachedKey and cachedKey ~= "" then
+        local cachedResult = nil
+        local finished = Instance.new("BindableEvent")
+
+        task.spawn(function()
+            local valid, keyOrErr = validateKey(cachedKey)
+            if valid then
+                cachedResult = keyOrErr
+                print("[NightFall] Cached key accepted.")
+            else
+                warn("[NightFall] Cached key invalid: " .. tostring(keyOrErr))
+            end
+            finished:Fire()
+        end)
+
+        finished.Event:Wait()
+
+        if cachedResult then
+            return cachedResult
+        end
     end
 
-    return resolvedKey
+    hideLoadingOverlay()
+    return createKeyUI()
 end
 
-local validatedKey = nil
-local cachedKey = fsRead(CONFIG.KEY_CACHE_PATH)
-if cachedKey and cachedKey ~= "" then
-    local valid, keyOrErr = validateKey(cachedKey)
-    if valid then
-        validatedKey = keyOrErr
-        print("[NightFall] Cached key accepted.")
-    else
-        warn("[NightFall] Cached key invalid: " .. tostring(keyOrErr))
-    end
-end
-
+local validatedKey = acquireKey()
 if not validatedKey then
-    validatedKey = createKeyUI()
-end
-
-if not validatedKey then
+    destroyLoadingOverlay()
     warn("[NightFall] No valid key provided.")
     return
 end
 
 getgenv().SCRIPT_KEY = validatedKey
 
-local source, dlErr = downloadScript(validatedKey)
-if not source then
-    warn("[NightFall] " .. tostring(dlErr))
+showLoadingOverlay("Downloading NightFall...")
+
+local downloadedSource = nil
+local downloadError = nil
+local downloadDone = Instance.new("BindableEvent")
+
+task.spawn(function()
+    downloadedSource, downloadError = downloadScript(validatedKey)
+    downloadDone:Fire()
+end)
+
+downloadDone.Event:Wait()
+
+if not downloadedSource then
+    destroyLoadingOverlay()
+    warn("[NightFall] " .. tostring(downloadError))
     return
 end
 
-loadstring(source)()
+setLoadingMessage("Starting NightFall...")
+task.wait(0.05)
+
+loadstring(downloadedSource)()
+destroyLoadingOverlay()
