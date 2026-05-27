@@ -145,7 +145,7 @@ if source:sub(1, 1) == "{" then
     return
 end
 
-if not source:find("GUI-PAGES-FIX") and not source:find("REG-FIX-v3") and not source:find("REG-FIX") then
+if not source:find("2026-05-27-FULL-FIX") and not source:find("GUI-PAGES-FIX") and not source:find("REG-FIX-v3") and not source:find("REG-FIX") then
     warn("[NightFall] homelandertest.lua on GitHub looks outdated — push the latest file from your PC.")
 end
 

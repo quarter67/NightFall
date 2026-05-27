@@ -839,6 +839,7 @@ Content.Parent = MainFrame
 applyCorner(Content, RADIUS.xl)
 
 local pages = {}
+UI.pages = pages
 local tabButtons = {}
 local activeTab = "Home"
 
@@ -4402,16 +4403,17 @@ State.scanTempVParts = function()
     return found
 end
 
+State.__bundleA.updateTempVESP = updateTempVESP
+State.__bundleA.clearAllTempVHighlights = clearAllTempVHighlights
+State.__bundleA.clearAllTempVBillboards = clearAllTempVBillboards
+State.__bundleA.onTempVPickedUp = onTempVPickedUp
+
 end -- scope block 1f (tempv · Luau local register limit)
 
 State.__bundle = {}
 for key, value in pairs(State.__bundleA) do
     State.__bundle[key] = value
 end
-State.__bundle.updateTempVESP = updateTempVESP
-State.__bundle.clearAllTempVHighlights = clearAllTempVHighlights
-State.__bundle.clearAllTempVBillboards = clearAllTempVBillboards
-State.__bundle.onTempVPickedUp = onTempVPickedUp
 
 do -- scope block 2a (failsafe + freecam · Luau local register limit)
 local F = State.__bundle
@@ -5402,6 +5404,7 @@ local refreshPlayerESPScan = F.refreshPlayerESPScan
 local updateFailsafe = F.updateFailsafe
 local teleportToSafeZone = F.teleportToSafeZone
 
+local clearAimbotLock, updateAimbotLock, aimMouseAtHead = (function()
 local AIMBOT_MAX_FOV = 220
 local AIMBOT_PREDICT_TIME = 0.04    -- small velocity lead; does not add lock delay
 local AIMBOT_LOST_GRACE = 0.6       -- seconds we keep a lock after the part briefly disappears
@@ -5715,6 +5718,9 @@ local function aimMouseAtHead(part, useScreenCenter, dt)
     return moved
 end
 
+return clearAimbotLock, updateAimbotLock, aimMouseAtHead
+end)()
+
 -- Input Handling
 bindConnection(UserInputService.InputBegan:Connect(function(input, gp)
     if beginCameraDrag(input) then
@@ -5869,24 +5875,33 @@ end))
 -- Main Update Loop
 local _renderFrame = 0
 local _espInterval = State.isMobile and 3 or 1  -- ESP runs every 3 frames on mobile
+
+local function tickFeature(fn, ...)
+    if type(fn) == "function" then
+        pcall(fn, ...)
+    end
+end
+
 bindConnection(RunService.RenderStepped:Connect(function(dt)
     if State.ejected then return end
     _renderFrame = _renderFrame + 1
 
-    updateFreecam(dt)
+    tickFeature(updateFreecam, dt)
     if State.spectating then
-        updateSpectateCamera()
+        tickFeature(updateSpectateCamera)
     end
-    updateBloodManipulator()
-    updateBloodManipEffectBlock()
-    updateMovementHacks()
-    updateFlight()
-    updateSpin(dt)
+    tickFeature(updateBloodManipulator)
+    tickFeature(updateBloodManipEffectBlock)
+    tickFeature(updateMovementHacks)
+    tickFeature(updateFlight)
+    tickFeature(updateSpin, dt)
 
     -- Throttle ESP on mobile to every 3 frames to reduce GPU/CPU pressure
     if _renderFrame % _espInterval == 0 then
-        updatePlayerESP()
-        updateTempVESP()
+        pcall(updatePlayerESP)
+        if type(updateTempVESP) == "function" then
+            pcall(updateTempVESP)
+        end
     end
 
     if State.noclipEnabled and player.Character then
@@ -5934,12 +5949,12 @@ end))
 
 bindConnection(RunService.Heartbeat:Connect(function()
     if State.ejected then return end
-    updateFailsafe()
+    tickFeature(updateFailsafe)
     if not State.speedEnabled or State.flightEnabled then return end
     local humanoid = getHumanoid()
     local hrp = getRoot()
     if humanoid and hrp then
-        updateSpeedHack(humanoid, hrp)
+        tickFeature(updateSpeedHack, humanoid, hrp)
     end
 end))
 
@@ -6180,12 +6195,6 @@ UI.ResetTogglePosBtn.MouseButton1Click:Connect(function()
     saveTogglePos(defaultPos)
 end)
 
-UI.ResetTogglePosBtn.MouseButton1Click:Connect(function()
-    local defaultPos = UDim2.new(0, 10, 0, 10)
-    UI.ToggleCube.Position = defaultPos
-    saveTogglePos(defaultPos)
-end)
-
 UI.SwappedMouseToggle.MouseButton1Click:Connect(function()
     State.swappedMouseButtons = not State.swappedMouseButtons
     setHubToggle(UI.SwappedMouseToggle, State.swappedMouseButtons)
@@ -6349,9 +6358,13 @@ task.defer(function()
     refreshMiscPlayerList()
 end)
 
+if type(F.updateMovementHacks) ~= "function" or type(F.updateTempVESP) ~= "function" then
+    warn("[NightFall] Feature bundle incomplete — movement/scanner may not work. Re-download the latest build.")
+end
+
 end -- scope block 2d (aimbot + wiring · Luau local register limit)
 
-print("✅ NightFall TEST loaded — build 2026-05-27-GUI-PAGES-FIX (keyless)")
+print("✅ NightFall TEST loaded — build 2026-05-27-FULL-FIX (keyless)")
 print("🎯 Toggle Aimbot in Combat tab → LOCK ON button appears on mobile, R/right-click on PC")
 print("💡 Top-left cube toggles the GUI | Drag the header bar to move on mobile")
 print("💡 Tabs: Scanner · Movement · Combat · Troll · Misc")
