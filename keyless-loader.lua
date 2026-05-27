@@ -10,7 +10,7 @@ local CONFIG = {
     SCRIPT_URL = "https://raw.githubusercontent.com/quarter67/NightFall/main/homelandertest.lua",
 }
 
-local LOADER_VERSION = "1.0-keyless"
+local LOADER_VERSION = "1.1-keyless"
 print("[NightFall] Keyless loader v" .. LOADER_VERSION)
 
 if game.PlaceId ~= CONFIG.REQUIRED_PLACE_ID then
@@ -26,7 +26,7 @@ local HttpService = game:GetService("HttpService")
 
 local DEFAULT_HEADERS = {
     ["Accept"] = "text/plain, application/json, */*",
-    ["User-Agent"] = "NightFallKeyless/1.0",
+    ["User-Agent"] = "NightFallKeyless/1.1",
 }
 
 local function getRequestFn()
@@ -94,6 +94,44 @@ local function httpGet(url)
     return nil
 end
 
+local function getCompileFn()
+    if type(loadstring) == "function" then return loadstring end
+    if type(load) == "function" then return load end
+    if getgenv then
+        local env = getgenv()
+        if env and type(env.loadstring) == "function" then return env.loadstring end
+        if env and type(env.load) == "function" then return env.load end
+    end
+    if getrenv then
+        local env = getrenv()
+        if env and type(env.loadstring) == "function" then return env.loadstring end
+        if env and type(env.load) == "function" then return env.load end
+    end
+    return nil
+end
+
+local function compileAndRun(source, label)
+    local compile = getCompileFn()
+    if type(compile) ~= "function" then
+        warn("[NightFall] Your executor does not support loadstring/load — cannot run the script.")
+        return false
+    end
+
+    local runScript, compileErr = compile(source, label or "NightFall")
+    if type(runScript) ~= "function" then
+        warn("[NightFall] Failed to compile script: " .. tostring(compileErr or "unknown compile error"))
+        return false
+    end
+
+    local ok, runErr = pcall(runScript)
+    if not ok then
+        warn("[NightFall] Script runtime error: " .. tostring(runErr))
+        return false
+    end
+
+    return true
+end
+
 print("[NightFall] Downloading test script...")
 local source = httpGet(CONFIG.SCRIPT_URL)
 
@@ -108,20 +146,4 @@ if source:sub(1, 1) == "{" then
 end
 
 print("[NightFall] Loaded test build (keyless).")
-
-local compile = loadstring or load
-if type(compile) ~= "function" then
-    warn("[NightFall] Your executor does not support loadstring/load — cannot run the script.")
-    return
-end
-
-local runScript, compileErr = compile(source)
-if type(runScript) ~= "function" then
-    warn("[NightFall] Failed to compile script: " .. tostring(compileErr or runScript))
-    return
-end
-
-local ok, runErr = pcall(runScript)
-if not ok then
-    warn("[NightFall] Script error: " .. tostring(runErr))
-end
+compileAndRun(source, "NightFallHomelanderTest")

@@ -3319,14 +3319,14 @@ local function updateFlight()
     local rightVector = cam.CFrame.RightVector
 
     -- Keyboard input (desktop / keyboard-equipped mobile executors)
-    if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveDirection += lookVector end
-    if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveDirection -= lookVector end
-    if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveDirection -= rightVector end
-    if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveDirection += rightVector end
-    if UserInputService:IsKeyDown(Enum.KeyCode.Space) then moveDirection += Vector3.yAxis end
+    if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveDirection = moveDirection + lookVector end
+    if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveDirection = moveDirection - lookVector end
+    if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveDirection = moveDirection - rightVector end
+    if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveDirection = moveDirection + rightVector end
+    if UserInputService:IsKeyDown(Enum.KeyCode.Space) then moveDirection = moveDirection + Vector3.yAxis end
     if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl)
         or UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then
-        moveDirection -= Vector3.yAxis
+        moveDirection = moveDirection - Vector3.yAxis
     end
     -- Thumbstick / virtual joystick input (always checked so mobile works even when
     -- TouchEnabled is misreported by the executor)
@@ -3345,8 +3345,8 @@ local function updateFlight()
         end
     end
     -- Mobile flight up/down buttons
-    if State.mobileFlightUp   then moveDirection += Vector3.yAxis  end
-    if State.mobileFlightDown then moveDirection -= Vector3.yAxis  end
+    if State.mobileFlightUp   then moveDirection = moveDirection + Vector3.yAxis end
+    if State.mobileFlightDown then moveDirection = moveDirection - Vector3.yAxis end
 
     pcall(function()
         local bv, bg = getOrCreateFlightMovers(hrp, cam)
@@ -6320,7 +6320,7 @@ end)
 
 end -- scope block 2b (aimbot + wiring · Luau local register limit)
 
-print("✅ NightFall TEST loaded — build 2026-05-27-MISC-LAYOUT-FIX (keyless)")
+print("✅ NightFall TEST loaded — build 2026-05-27-PC-COMPAT (keyless)")
 print("🎯 Toggle Aimbot in Combat tab → LOCK ON button appears on mobile, R/right-click on PC")
 print("💡 Top-left cube toggles the GUI | Drag the header bar to move on mobile")
 print("💡 Tabs: Scanner · Movement · Combat · Troll · Misc")
