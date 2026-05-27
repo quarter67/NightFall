@@ -18,7 +18,7 @@ local CONFIG = {
     MAX_ATTEMPTS = 5,
 }
 
-local LOADER_VERSION = "3.4-daki"
+local LOADER_VERSION = "3.6-daki-delta"
 print("[NightFall] Loader v" .. LOADER_VERSION)
 
 local COLORS = {
@@ -59,33 +59,6 @@ local function isValidApiUrl(url)
     return url:sub(1, 8) == "https://" and not url:find("REPLACE%-WITH")
 end
 
-local function resolveApiUrl()
-    local ok, remote = pcall(function()
-        return game:HttpGet(CONFIG.API_URL_SOURCE)
-    end)
-
-    if ok then
-        local url = trim(remote)
-        if isValidApiUrl(url) then
-            return url
-        end
-    end
-
-    if isValidApiUrl(CONFIG.API_BASE_URL) then
-        return trim(CONFIG.API_BASE_URL)
-    end
-
-    return nil
-end
-
-local API_BASE_URL = resolveApiUrl()
-if not API_BASE_URL then
-    warn("[NightFall] No valid HTTPS API URL. Upload api-url.txt to GitHub with your tunnel URL.")
-    return
-end
-
-print("[NightFall] API → " .. API_BASE_URL)
-
 local function fsRead(path)
     local ok, result = pcall(function()
         if isfile and readfile and isfile(path) then
@@ -124,30 +97,141 @@ end
 
 local HWID = getHwid()
 
+local DEFAULT_HEADERS = {
+    ["Accept"] = "application/json, text/plain, */*",
+    ["User-Agent"] = "NightFallLoader/3.6",
+}
+
+local function mergeHeaders(custom)
+    local merged = {}
+    for key, value in pairs(DEFAULT_HEADERS) do
+        merged[key] = value
+    end
+    for key, value in pairs(custom or {}) do
+        merged[key] = value
+    end
+    return merged
+end
+
+local function getExecutorRequest()
+    if type(request) == "function" then
+        return request, "request"
+    end
+    if type(http_request) == "function" then
+        return http_request, "http_request"
+    end
+    if syn and type(syn.request) == "function" then
+        return syn.request, "syn.request"
+    end
+    if http and type(http.request) == "function" then
+        return http.request, "http.request"
+    end
+    return nil, "HttpService"
+end
+
+local EXECUTOR_REQUEST, EXECUTOR_NAME = getExecutorRequest()
+print("[NightFall] HTTP mode → " .. EXECUTOR_NAME)
+
+local function extractResponseBody(response)
+    if type(response) == "string" and response ~= "" then
+        return response
+    end
+
+    if type(response) == "table" then
+        if type(response.Body) == "string" and response.Body ~= "" then
+            return response.Body
+        end
+        if type(response.body) == "string" and response.body ~= "" then
+            return response.body
+        end
+    end
+
+    return nil
+end
+
+local function httpFetch(url, options)
+    options = options or {}
+    local method = options.method or "GET"
+    local body = options.body or ""
+    local headers = mergeHeaders(options.headers)
+    local strategies = {}
+
+    if EXECUTOR_REQUEST then
+        table.insert(strategies, function()
+            local response = EXECUTOR_REQUEST({
+                Url = url,
+                Method = method,
+                Headers = headers,
+                Body = body,
+            })
+            return extractResponseBody(response)
+        end)
+    end
+
+    table.insert(strategies, function()
+        local payload = {
+            Url = url,
+            Method = method,
+            Headers = headers,
+        }
+        if body ~= "" then
+            payload.Body = body
+        end
+
+        local response = HttpService:RequestAsync(payload)
+        if response and response.Success and response.Body and response.Body ~= "" then
+            return response.Body
+        end
+        if response and response.Body and response.Body ~= "" then
+            return response.Body
+        end
+        return nil
+    end)
+
+    table.insert(strategies, function()
+        if method == "POST" then
+            return HttpService:PostAsync(url, body, Enum.HttpContentType.ApplicationJson, false, headers)
+        end
+        return HttpService:GetAsync(url, true, headers)
+    end)
+
+    table.insert(strategies, function()
+        if method == "POST" then
+            if game.HttpPost then
+                return game:HttpPost(url, body, true, headers["Content-Type"] or "application/json")
+            end
+            return nil
+        end
+        return game:HttpGet(url, true)
+    end)
+
+    for attempt = 1, 4 do
+        for _, strategy in ipairs(strategies) do
+            local ok, responseBody = pcall(strategy)
+            if ok and responseBody and responseBody ~= "" then
+                return responseBody, nil
+            end
+        end
+        if attempt < 4 then
+            task.wait(2)
+        end
+    end
+
+    return nil, "Could not reach key server (Delta: enable HTTP requests in settings)"
+end
+
 local function httpRequestJson(url, method, body, headers)
     method = method or "GET"
     headers = headers or {}
 
     for attempt = 1, 3 do
-        local ok, responseBody = pcall(function()
-            if request then
-                local res = request({
-                    Url = url,
-                    Method = method,
-                    Headers = headers,
-                    Body = body or "",
-                })
-                if res and res.Body then
-                    return res.Body
-                end
-            end
-            if method == "POST" then
-                return game:HttpPost(url, body or "", true, headers["Content-Type"] or "application/json")
-            end
-            return game:HttpGet(url)
-        end)
+        local responseBody, fetchErr = httpFetch(url, {
+            method = method,
+            body = body or "",
+            headers = headers,
+        })
 
-        if ok and responseBody and responseBody ~= "" then
+        if responseBody and responseBody ~= "" then
             local trimmed = responseBody:gsub("^%s+", ""):gsub("%s+$", "")
             if trimmed:sub(1, 1) == "{" then
                 local decodeOk, data = pcall(function()
@@ -171,27 +255,21 @@ local function httpRequestJson(url, method, body, headers)
         end
     end
 
-    return nil, "Could not reach key server — HTTPS required (Roblox blocks HTTP)"
+    return nil, fetchErr or "Could not reach key server (use HTTPS URL in api-url.txt)"
 end
 
-local function httpRequestRaw(url)
-    for attempt = 1, 3 do
-        local ok, responseBody = pcall(function()
-            if request then
-                local res = request({
-                    Url = url,
-                    Method = "GET",
-                })
-                if res and res.Body then
-                    return res.Body
-                end
-            end
-            return game:HttpGet(url)
-        end)
+local function httpRequestRaw(url, method, body, headers)
+    method = method or "GET"
+    for attempt = 1, 4 do
+        local responseBody, fetchErr = httpFetch(url, {
+            method = method,
+            body = body or "",
+            headers = headers or {},
+        })
 
-        if ok and responseBody and responseBody ~= "" then
+        if responseBody and responseBody ~= "" then
             if responseBody:find("<!DOCTYPE") or responseBody:find("<html") then
-                if attempt < 3 then
+                if attempt < 4 then
                     task.wait(3)
                 else
                     return nil, "Server waking up — wait 30 seconds and try again."
@@ -199,13 +277,37 @@ local function httpRequestRaw(url)
             else
                 return responseBody, nil
             end
-        elseif attempt < 3 then
-            task.wait(3)
+        elseif attempt < 4 then
+            task.wait(2)
         end
     end
 
-    return nil, "Could not download script"
+    return nil, fetchErr or "Could not download script"
 end
+
+local function resolveApiUrl()
+    local remote, _ = httpFetch(CONFIG.API_URL_SOURCE, { method = "GET" })
+    if remote then
+        local url = trim(remote)
+        if isValidApiUrl(url) then
+            return url
+        end
+    end
+
+    if isValidApiUrl(CONFIG.API_BASE_URL) then
+        return trim(CONFIG.API_BASE_URL)
+    end
+
+    return nil
+end
+
+local API_BASE_URL = resolveApiUrl()
+if not API_BASE_URL then
+    warn("[NightFall] No valid HTTPS API URL. Upload api-url.txt to GitHub with your tunnel URL.")
+    return
+end
+
+print("[NightFall] API → " .. API_BASE_URL)
 
 local function fetchGetKeyUrl()
     local data, err = httpRequestJson(
@@ -244,14 +346,28 @@ local function validateKey(key)
         return false, "Enter a key."
     end
 
-    local url = string.format(
-        "%s/api/validate?key=%s&hwid=%s",
-        API_BASE_URL,
-        HttpService:UrlEncode(key:upper()),
-        HttpService:UrlEncode(HWID)
+    local payload = HttpService:JSONEncode({
+        key = key:upper(),
+        hwid = HWID,
+    })
+
+    local data, err = httpRequestJson(
+        API_BASE_URL .. "/api/validate",
+        "POST",
+        payload,
+        { ["Content-Type"] = "application/json" }
     )
 
-    local data, err = httpRequestJson(url, "GET")
+    if not data then
+        local url = string.format(
+            "%s/api/validate?key=%s&hwid=%s",
+            API_BASE_URL,
+            HttpService:UrlEncode(key:upper()),
+            HttpService:UrlEncode(HWID)
+        )
+        data, err = httpRequestJson(url, "GET")
+    end
+
     if not data then
         return false, err or "Validation failed."
     end
@@ -264,15 +380,29 @@ local function validateKey(key)
 end
 
 local function downloadScript(key)
-    local url = string.format(
-        "%s/api/script?key=%s&hwid=%s&t=%s",
-        API_BASE_URL,
-        HttpService:UrlEncode(key),
-        HttpService:UrlEncode(HWID),
-        tostring(os.time())
+    local payload = HttpService:JSONEncode({
+        key = key,
+        hwid = HWID,
+    })
+
+    local source, dlErr = httpRequestRaw(
+        API_BASE_URL .. "/api/script",
+        "POST",
+        payload,
+        { ["Content-Type"] = "application/json", ["Accept"] = "text/plain, application/json, */*" }
     )
 
-    local source, dlErr = httpRequestRaw(url)
+    if not source then
+        local url = string.format(
+            "%s/api/script?key=%s&hwid=%s&t=%s",
+            API_BASE_URL,
+            HttpService:UrlEncode(key),
+            HttpService:UrlEncode(HWID),
+            tostring(os.time())
+        )
+        source, dlErr = httpRequestRaw(url, "GET")
+    end
+
     if not source then
         return nil, dlErr or "Failed to download script."
     end
