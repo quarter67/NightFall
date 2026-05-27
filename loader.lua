@@ -18,7 +18,7 @@ local CONFIG = {
     MAX_ATTEMPTS = 5,
 }
 
-local LOADER_VERSION = "3.8-daki-delta"
+local LOADER_VERSION = "3.8.1-daki-delta"
 print("[NightFall] Loader v" .. LOADER_VERSION)
 
 local COLORS = {
@@ -285,50 +285,6 @@ local function httpRequestRaw(url, method, body, headers)
     return nil, fetchErr or "Could not download script"
 end
 
-local function resolveApiUrl()
-    local remote, _ = httpFetch(CONFIG.API_URL_SOURCE, { method = "GET" })
-    if remote then
-        local url = trim(remote)
-        if isValidApiUrl(url) then
-            return url
-        end
-    end
-
-    if isValidApiUrl(CONFIG.API_BASE_URL) then
-        return trim(CONFIG.API_BASE_URL)
-    end
-
-    return nil
-end
-
-local API_BASE_URL = resolveApiUrl()
-if not API_BASE_URL then
-    warn("[NightFall] No valid HTTPS API URL. Upload api-url.txt to GitHub with your tunnel URL.")
-    return
-end
-
-print("[NightFall] API → " .. API_BASE_URL)
-showLoadingOverlay("Connecting to key server...")
-
-local function fetchGetKeyUrl()
-    local data, err = httpRequestJson(
-        API_BASE_URL .. "/api/get-link",
-        "POST",
-        "{}",
-        { ["Content-Type"] = "application/json" }
-    )
-
-    if not data then
-        return nil, err or "Could not reach key server"
-    end
-
-    if data.ok and data.url then
-        return data.url, nil
-    end
-
-    return nil, data.error or "Get key failed"
-end
-
 local function getGuiParent()
     local player = Players.LocalPlayer
     if player then
@@ -484,6 +440,50 @@ local function destroyLoadingOverlay()
         end)
         LoadingOverlay = nil
     end
+end
+
+local function resolveApiUrl()
+    local remote, _ = httpFetch(CONFIG.API_URL_SOURCE, { method = "GET" })
+    if remote then
+        local url = trim(remote)
+        if isValidApiUrl(url) then
+            return url
+        end
+    end
+
+    if isValidApiUrl(CONFIG.API_BASE_URL) then
+        return trim(CONFIG.API_BASE_URL)
+    end
+
+    return nil
+end
+
+local API_BASE_URL = resolveApiUrl()
+if not API_BASE_URL then
+    warn("[NightFall] No valid HTTPS API URL. Upload api-url.txt to GitHub with your tunnel URL.")
+    return
+end
+
+print("[NightFall] API → " .. API_BASE_URL)
+showLoadingOverlay("Connecting to key server...")
+
+local function fetchGetKeyUrl()
+    local data, err = httpRequestJson(
+        API_BASE_URL .. "/api/get-link",
+        "POST",
+        "{}",
+        { ["Content-Type"] = "application/json" }
+    )
+
+    if not data then
+        return nil, err or "Could not reach key server"
+    end
+
+    if data.ok and data.url then
+        return data.url, nil
+    end
+
+    return nil, data.error or "Get key failed"
 end
 
 local function formatKeyError(code)
