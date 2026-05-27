@@ -1026,9 +1026,22 @@ local function setHubToggle(btn, enabled, onText, offText)
     end
 end
 
+local function findScrollParent(gui)
+    local p = gui and gui.Parent
+    while p do
+        if p:IsA("ScrollingFrame") then return p end
+        p = p.Parent
+    end
+    return nil
+end
+
 local function createHubSlider(parent, title, minVal, maxVal, defaultVal, onChanged)
+    local trackHeight = State.isMobile and 36 or 6
+    local containerHeight = State.isMobile and 78 or 68
+    local trackY = State.isMobile and 38 or 44
+
     local container = Instance.new("Frame")
-    container.Size = UDim2.new(1, 0, 0, 68)
+    container.Size = UDim2.new(1, 0, 0, containerHeight)
     container.BackgroundColor3 = COLORS.surface
     container.Parent = parent
     applyCorner(container, RADIUS.md)
@@ -1040,9 +1053,10 @@ local function createHubSlider(parent, title, minVal, maxVal, defaultVal, onChan
     titleLabel.BackgroundTransparency = 1
     titleLabel.Text = title
     titleLabel.TextColor3 = COLORS.text
-    titleLabel.TextSize = 13
+    titleLabel.TextSize = State.isMobile and 14 or 13
     titleLabel.Font = Enum.Font.GothamSemibold
     titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+    titleLabel.Active = false
     titleLabel.Parent = container
 
     local valueLabel = Instance.new("TextLabel")
@@ -1052,36 +1066,42 @@ local function createHubSlider(parent, title, minVal, maxVal, defaultVal, onChan
     valueLabel.BackgroundTransparency = 1
     valueLabel.Text = tostring(defaultVal)
     valueLabel.TextColor3 = COLORS.accentOn
-    valueLabel.TextSize = 13
+    valueLabel.TextSize = State.isMobile and 14 or 13
     valueLabel.Font = Enum.Font.GothamBold
     valueLabel.TextXAlignment = Enum.TextXAlignment.Right
+    valueLabel.Active = false
     valueLabel.Parent = container
 
     local track = Instance.new("TextButton")
     track.Name = "Track"
-    track.Size = UDim2.new(1, -28, 0, 6)
-    track.Position = UDim2.new(0, 14, 0, 44)
+    track.Size = UDim2.new(1, -28, 0, trackHeight)
+    track.Position = UDim2.new(0, 14, 0, trackY)
     track.BackgroundColor3 = COLORS.track
     track.Text = ""
     track.AutoButtonColor = false
+    track.Active = true
+    track.ZIndex = 3
     track.Parent = container
     applyCorner(track, RADIUS.full)
 
     local fill = Instance.new("Frame")
     fill.Name = "Fill"
-    fill.Size = UDim2.new(0, 0, 1, 0)
+    fill.Size = UDim2.new(0, 0, State.isMobile and 0.22 or 1, State.isMobile and 0 or 0)
+    fill.AnchorPoint = State.isMobile and Vector2.new(0, 0.5) or Vector2.zero
+    fill.Position = State.isMobile and UDim2.new(0, 0, 0.5, 0) or UDim2.new(0, 0, 0, 0)
     fill.BackgroundColor3 = COLORS.accent
     fill.BorderSizePixel = 0
+    fill.ZIndex = 4
     fill.Parent = track
     applyCorner(fill, RADIUS.full)
 
     local knob = Instance.new("Frame")
     knob.Name = "Knob"
-    knob.Size = UDim2.new(0, 14, 0, 14)
-    knob.Position = UDim2.new(0, -7, 0.5, -7)
+    knob.Size = UDim2.new(0, State.isMobile and 22 or 14, 0, State.isMobile and 22 or 14)
+    knob.Position = UDim2.new(0, State.isMobile and -11 or -7, 0.5, State.isMobile and -11 or -7)
     knob.BackgroundColor3 = COLORS.text
     knob.BorderSizePixel = 0
-    knob.ZIndex = 2
+    knob.ZIndex = 5
     knob.Parent = track
     applyCorner(knob, RADIUS.full)
     applyStroke(knob, COLORS.accentLight, 1, 0.2)
@@ -1089,13 +1109,24 @@ local function createHubSlider(parent, title, minVal, maxVal, defaultVal, onChan
     local current = defaultVal
     local draggingSlider = false
     local sliderDragInput = nil
+    local scrollParent = nil
+
+    local function setScrollLocked(locked)
+        if scrollParent and scrollParent.Parent then
+            scrollParent.ScrollingEnabled = not locked
+        end
+    end
 
     local function setValue(value, fireCallback)
         current = math.clamp(math.floor(value + 0.5), minVal, maxVal)
         valueLabel.Text = tostring(current)
         local alpha = (current - minVal) / math.max(maxVal - minVal, 1)
-        fill.Size = UDim2.new(alpha, 0, 1, 0)
-        knob.Position = UDim2.new(alpha, -7, 0.5, -7)
+        if State.isMobile then
+            fill.Size = UDim2.new(alpha, 0, 0.22, 0)
+        else
+            fill.Size = UDim2.new(alpha, 0, 1, 0)
+        end
+        knob.Position = UDim2.new(alpha, State.isMobile and -11 or -7, 0.5, State.isMobile and -11 or -7)
         if fireCallback and onChanged then
             onChanged(current)
         end
@@ -1109,29 +1140,45 @@ local function createHubSlider(parent, title, minVal, maxVal, defaultVal, onChan
         setValue(minVal + (maxVal - minVal) * alpha, true)
     end
 
-    track.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1
-            or input.UserInputType == Enum.UserInputType.Touch then
-            draggingSlider = true
-            sliderDragInput = input
-            updateFromInput(input)
+    local function beginSliderDrag(input)
+        if input.UserInputType ~= Enum.UserInputType.MouseButton1
+            and input.UserInputType ~= Enum.UserInputType.Touch then
+            return
         end
-    end)
+        scrollParent = findScrollParent(container)
+        draggingSlider = true
+        sliderDragInput = input
+        setScrollLocked(true)
+        updateFromInput(input)
+    end
 
-    track.InputEnded:Connect(function(input)
+    local function endSliderDrag(input)
         if sliderDragInput and input == sliderDragInput then
             draggingSlider = false
             sliderDragInput = nil
+            setScrollLocked(false)
         end
+    end
+
+    track.InputBegan:Connect(function(input)
+        beginSliderDrag(input)
     end)
 
-    UserInputService.InputChanged:Connect(function(input)
+    track.InputEnded:Connect(function(input)
+        endSliderDrag(input)
+    end)
+
+    bindConnection(UserInputService.InputChanged:Connect(function(input)
         if draggingSlider and input == sliderDragInput
             and (input.UserInputType == Enum.UserInputType.MouseMovement
                 or input.UserInputType == Enum.UserInputType.Touch) then
             updateFromInput(input)
         end
-    end)
+    end))
+
+    bindConnection(UserInputService.InputEnded:Connect(function(input)
+        endSliderDrag(input)
+    end))
 
     setValue(defaultVal, false)
 
@@ -6184,7 +6231,7 @@ end)
 
 end -- scope block 2b (aimbot + wiring · Luau local register limit)
 
-print("✅ NightFall TEST loaded — build 2026-05-26-MOBILE-DRAG (keyless)")
+print("✅ NightFall TEST loaded — build 2026-05-26-MOBILE-SLIDERS (keyless)")
 print("🎯 Toggle Aimbot in Combat tab → LOCK ON button appears on mobile, R/right-click on PC")
 print("💡 Top-left cube toggles the GUI | Drag the header bar to move on mobile")
 print("💡 Tabs: Scanner · Movement · Combat · Troll · Misc")
