@@ -9,7 +9,7 @@ local CONFIG = {
     REQUIRED_PLACE_ID = 134225461562780,
 
     -- Fallback if api-url.txt is unavailable (must be HTTPS for Roblox)
-    API_BASE_URL = "https://elimination-nam-smaller-consultancy.trycloudflare.com",
+    API_BASE_URL = "https://visual-mayor-corrected-dancing.trycloudflare.com",
 
     -- Auto-loaded from GitHub — update api-url.txt when your tunnel URL changes
     API_URL_SOURCE = "https://raw.githubusercontent.com/quarter67/NightFall/main/api-url.txt",

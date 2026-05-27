@@ -1232,17 +1232,53 @@ local function createHubTextInput(parent, title, placeholder, defaultText)
     return container, box
 end
 
-local function createMiscFold(parent, title, startExpanded)
+local function setupMobileScroll(scroll)
+    if not scroll then return end
+    scroll.ScrollingEnabled = true
+    scroll.Active = true
+    scroll.ScrollingDirection = Enum.ScrollingDirection.Y
+    scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+    if State.isMobile then
+        scroll.ScrollBarThickness = 10
+        scroll.ScrollBarImageTransparency = 0.25
+        scroll.BorderSizePixel = 0
+        pcall(function()
+            scroll.ElasticBehavior = Enum.ElasticBehavior.WhenScrollable
+        end)
+    end
+end
+
+local function scrollToVisible(scroll, element, padding)
+    if not scroll or not element then return end
+    padding = padding or 12
+    task.defer(function()
+        task.wait(0.06)
+        if not scroll.Parent or not element.Parent then return end
+        local offset = element.AbsolutePosition.Y - scroll.AbsolutePosition.Y + scroll.CanvasPosition.Y
+        local viewH = scroll.AbsoluteSize.Y
+        local elemH = element.AbsoluteSize.Y
+        if offset + elemH > scroll.CanvasPosition.Y + viewH - padding then
+            scroll.CanvasPosition = Vector2.new(0, offset + elemH - viewH + padding)
+        elseif offset < scroll.CanvasPosition.Y + padding then
+            scroll.CanvasPosition = Vector2.new(0, math.max(0, offset - padding))
+        end
+    end)
+end
+
+local function createMiscFold(parent, title, startExpanded, pageScroll)
+    local headerH = State.isMobile and 44 or 40
     local section = Instance.new("Frame")
-    section.Size = UDim2.new(1, 0, 0, 40)
+    section.Size = UDim2.new(1, 0, 0, headerH)
     section.BackgroundTransparency = 1
     section.Parent = parent
 
     local header = Instance.new("TextButton")
-    header.Size = UDim2.new(1, 0, 0, 40)
+    header.Size = UDim2.new(1, 0, 0, headerH)
     header.BackgroundColor3 = COLORS.surface
     header.Text = ""
     header.AutoButtonColor = false
+    header.Active = true
+    header.ZIndex = 2
     header.Parent = section
     applyCorner(header, RADIUS.md)
     applyStroke(header, COLORS.border, 1, 0.65)
@@ -1262,8 +1298,9 @@ local function createMiscFold(parent, title, startExpanded)
     titleLabel.Text = title
     titleLabel.TextColor3 = COLORS.text
     titleLabel.Font = Enum.Font.GothamBold
-    titleLabel.TextSize = 14
+    titleLabel.TextSize = State.isMobile and 15 or 14
     titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+    titleLabel.Active = false
     titleLabel.Parent = header
 
     local arrow = Instance.new("TextLabel")
@@ -1275,14 +1312,15 @@ local function createMiscFold(parent, title, startExpanded)
     arrow.TextColor3 = COLORS.textMuted
     arrow.TextSize = 14
     arrow.Font = Enum.Font.GothamBold
+    arrow.Active = false
     arrow.Parent = header
 
     local body = Instance.new("Frame")
     body.Name = "Body"
     body.Size = UDim2.new(1, 0, 0, 0)
-    body.Position = UDim2.new(0, 0, 0, 44)
+    body.Position = UDim2.new(0, 0, 0, headerH + 4)
     body.BackgroundTransparency = 1
-    body.ClipsDescendants = true
+    body.ClipsDescendants = false
     body.Parent = section
 
     local bodyLayout = Instance.new("UIListLayout")
@@ -1294,7 +1332,7 @@ local function createMiscFold(parent, title, startExpanded)
     local function refreshSectionSize()
         local bodyHeight = expanded and bodyLayout.AbsoluteContentSize.Y or 0
         body.Size = UDim2.new(1, 0, 0, bodyHeight)
-        section.Size = UDim2.new(1, 0, 0, 40 + (expanded and bodyHeight + 4 or 0))
+        section.Size = UDim2.new(1, 0, 0, headerH + (expanded and bodyHeight + 4 or 0))
     end
 
     bodyLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(refreshSectionSize)
@@ -1308,6 +1346,12 @@ local function createMiscFold(parent, title, startExpanded)
             end
         end
         refreshSectionSize()
+        if expanded and pageScroll then
+            scrollToVisible(pageScroll, section, 16)
+            task.delay(0.12, function()
+                scrollToVisible(pageScroll, section, 16)
+            end)
+        end
     end
 
     header.MouseButton1Click:Connect(function()
@@ -1665,24 +1709,24 @@ UI.AnnoySoundBtn = createHubButton(TrollList, "Play Loud Sound", "Play an annoyi
 UI.ResetTrollBtn = createHubButton(TrollList, "Reset Troll Effects", "Turn off spin & desync")
 
 local MiscScroll = Instance.new("ScrollingFrame")
+MiscScroll.Name = "MiscScroll"
 MiscScroll.Size = UDim2.new(1, 0, 1, 0)
 MiscScroll.BackgroundTransparency = 1
 MiscScroll.BorderSizePixel = 0
-MiscScroll.ScrollBarThickness = 5
-MiscScroll.ScrollBarImageColor3 = COLORS.border
 MiscScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
-MiscScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
-MiscScroll.ScrollingDirection = Enum.ScrollingDirection.Y
 MiscScroll.Parent = MiscPage
+setupMobileScroll(MiscScroll)
 
 local MiscListPad = Instance.new("UIPadding")
 MiscListPad.PaddingTop = UDim.new(0, 4)
-MiscListPad.PaddingBottom = UDim.new(0, 8)
+MiscListPad.PaddingBottom = UDim.new(0, State.isMobile and 24 or 8)
 MiscListPad.PaddingRight = UDim.new(0, 6)
+MiscListPad.PaddingLeft = UDim.new(0, 2)
 MiscListPad.Parent = MiscScroll
 
 local MiscList = Instance.new("Frame")
-MiscList.Size = UDim2.new(1, 0, 0, 0)
+MiscList.Name = "MiscList"
+MiscList.Size = UDim2.new(1, -8, 0, 0)
 MiscList.AutomaticSize = Enum.AutomaticSize.Y
 MiscList.BackgroundTransparency = 1
 MiscList.Parent = MiscScroll
@@ -1691,7 +1735,14 @@ local MiscLayout = Instance.new("UIListLayout")
 MiscLayout.Padding = UDim.new(0, 8)
 MiscLayout.Parent = MiscList
 
-local _, SpectateBody = createMiscFold(MiscList, "Spectate", true)
+MiscLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+    local contentH = MiscLayout.AbsoluteContentSize.Y
+    MiscList.Size = UDim2.new(1, -8, 0, contentH)
+    local padT = MiscListPad.PaddingTop.Offset + MiscListPad.PaddingBottom.Offset
+    MiscScroll.CanvasSize = UDim2.new(0, 0, 0, contentH + padT + 8)
+end)
+
+local _, SpectateBody = createMiscFold(MiscList, "Spectate", not State.isMobile, MiscScroll)
 
 local MiscSubLabel = Instance.new("TextLabel")
 MiscSubLabel.Size = UDim2.new(1, 0, 0, 18)
@@ -1720,13 +1771,12 @@ SpectateSelectedPad.PaddingLeft = UDim.new(0, 12)
 SpectateSelectedPad.Parent = UI.SpectateSelectedLabel
 
 UI.SpectatePlayerScroll = Instance.new("ScrollingFrame")
-UI.SpectatePlayerScroll.Size = UDim2.new(1, 0, 0, 180)
+UI.SpectatePlayerScroll.Size = UDim2.new(1, 0, 0, State.isMobile and 120 or 180)
 UI.SpectatePlayerScroll.BackgroundColor3 = COLORS.surface
 UI.SpectatePlayerScroll.BorderSizePixel = 0
-UI.SpectatePlayerScroll.ScrollBarThickness = 4
-UI.SpectatePlayerScroll.ScrollBarImageColor3 = COLORS.border
 UI.SpectatePlayerScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
 UI.SpectatePlayerScroll.Parent = SpectateBody
+setupMobileScroll(UI.SpectatePlayerScroll)
 applyCorner(UI.SpectatePlayerScroll, RADIUS.md)
 applyStroke(UI.SpectatePlayerScroll, COLORS.border, 1, 0.65)
 
@@ -1749,11 +1799,11 @@ UI.RefreshSpectateListBtn = createHubButton(SpectateBody, "Refresh Player List",
 UI.SpectateBtn = createHubButton(SpectateBody, "Spectate", "Right-drag orbit · scroll zoom")
 UI.StopSpectateBtn = createHubButton(SpectateBody, "Stop Spectate", "Return camera to you")
 
-local _, FlingBody = createMiscFold(MiscList, "Fling", false)
+local _, FlingBody = createMiscFold(MiscList, "Fling", false, MiscScroll)
 
 UI.FlingSelectedBtn = createHubButton(FlingBody, "Fling Selected", "SkidFling · turn off noclip/desync first")
 
-local _, FreecamBody = createMiscFold(MiscList, "Freecam", false)
+local _, FreecamBody = createMiscFold(MiscList, "Freecam", false, MiscScroll)
 
 UI.FreecamToggle = createHubButton(FreecamBody, "Freecam", "WASD move · right-drag look · scroll speed")
 setHubToggle(UI.FreecamToggle, false)
@@ -1769,7 +1819,7 @@ UI.FreecamSpeedSlider, UI.setFreecamSpeedSliderValue = createHubSlider(
     end
 )
 
-local _, EffectsBody = createMiscFold(MiscList, "Effects", false)
+local _, EffectsBody = createMiscFold(MiscList, "Effects", false, MiscScroll)
 
 UI.RemoveBloodManipEffectsToggle = createHubButton(
     EffectsBody,
@@ -1778,7 +1828,7 @@ UI.RemoveBloodManipEffectsToggle = createHubButton(
 )
 setHubToggle(UI.RemoveBloodManipEffectsToggle, false)
 
-local _, AimbotBody = createMiscFold(MiscList, "Aimbot", false)
+local _, AimbotBody = createMiscFold(MiscList, "Aimbot", false, MiscScroll)
 
 local AimbotDesc = Instance.new("TextLabel")
 AimbotDesc.Size = UDim2.new(1, 0, 0, 32)
@@ -1843,7 +1893,7 @@ UI.AimbotPartTorsoBtn.MouseButton1Click:Connect(function()
     setAimbotTargetPartPreset("UpperTorso")
 end)
 
-local _, FailsafeBody = createMiscFold(MiscList, "Failsafe", false)
+local _, FailsafeBody = createMiscFold(MiscList, "Failsafe", false, MiscScroll)
 
 local FailsafeDesc = Instance.new("TextLabel")
 FailsafeDesc.Size = UDim2.new(1, 0, 0, 32)
@@ -6231,7 +6281,7 @@ end)
 
 end -- scope block 2b (aimbot + wiring · Luau local register limit)
 
-print("✅ NightFall TEST loaded — build 2026-05-26-MOBILE-SLIDERS (keyless)")
+print("✅ NightFall TEST loaded — build 2026-05-27-MISC-MOBILE (keyless)")
 print("🎯 Toggle Aimbot in Combat tab → LOCK ON button appears on mobile, R/right-click on PC")
 print("💡 Top-left cube toggles the GUI | Drag the header bar to move on mobile")
 print("💡 Tabs: Scanner · Movement · Combat · Troll · Misc")
