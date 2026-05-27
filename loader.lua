@@ -9,7 +9,7 @@ local CONFIG = {
     REQUIRED_PLACE_ID = 134225461562780,
 
     -- Fallback if api-url.txt is unavailable (must be HTTPS for Roblox)
-    API_BASE_URL = "https://volume-courts-straight-tribute.trycloudflare.com",
+    API_BASE_URL = "https://elimination-nam-smaller-consultancy.trycloudflare.com",
 
     -- Auto-loaded from GitHub — update api-url.txt when your tunnel URL changes
     API_URL_SOURCE = "https://raw.githubusercontent.com/quarter67/NightFall/main/api-url.txt",
@@ -242,6 +242,9 @@ local function httpRequestJson(url, method, body, headers)
                 end
             end
             if responseBody:find("<!DOCTYPE") or responseBody:find("<html") then
+                if responseBody:find("Cloudflare Tunnel error") or responseBody:find("error code: 1033") then
+                    return nil, "Tunnel URL expired — update api-url.txt on GitHub."
+                end
                 if attempt < 3 then
                     task.wait(3)
                 else
