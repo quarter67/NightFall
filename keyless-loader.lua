@@ -1,6 +1,6 @@
 --[[
     NightFall Keyless Loader (TEST ONLY)
-    Fetches homelandertest.lua — no key required.
+    Loads homelandertest.lua locally when possible, otherwise from URL — no key required.
 
     Share this file OR the one-liner below. Do NOT share improved_script.lua.
 ]]
@@ -10,7 +10,14 @@ local CONFIG = {
     SCRIPT_URL = "https://raw.githubusercontent.com/quarter67/NightFall/main/homelandertest.lua",
 }
 
-local LOADER_VERSION = "1.3-keyless"
+local LOCAL_PATHS = {
+    "homelandertest.lua",
+    "ScriptHub/homelandertest.lua",
+    "nightfall/homelandertest.lua",
+    "workspace/homelandertest.lua",
+}
+
+local LOADER_VERSION = "1.4-keyless"
 print("[NightFall] Keyless loader v" .. LOADER_VERSION)
 
 if game.PlaceId ~= CONFIG.REQUIRED_PLACE_ID then
@@ -26,7 +33,7 @@ local HttpService = game:GetService("HttpService")
 
 local DEFAULT_HEADERS = {
     ["Accept"] = "text/plain, application/json, */*",
-    ["User-Agent"] = "NightFallKeyless/1.1",
+    ["User-Agent"] = "NightFallKeyless/1.4",
 }
 
 local function getRequestFn()
@@ -38,6 +45,25 @@ local function getRequestFn()
 end
 
 local REQUEST_FN = getRequestFn()
+
+local function fsRead(path)
+    local ok, result = pcall(function()
+        if isfile and readfile and isfile(path) then
+            return readfile(path)
+        end
+    end)
+    return ok and result or nil
+end
+
+local function loadLocalScript()
+    for _, path in ipairs(LOCAL_PATHS) do
+        local content = fsRead(path)
+        if content and content ~= "" then
+            return content, path
+        end
+    end
+    return nil, nil
+end
 
 local function httpGet(url)
     local strategies = {}
@@ -132,21 +158,23 @@ local function compileAndRun(source, label)
     return true
 end
 
-print("[NightFall] Downloading test script...")
-local source = httpGet(CONFIG.SCRIPT_URL)
+local source, localPath = loadLocalScript()
 
-if not source or source == "" then
-    warn("[NightFall] Failed to download homelandertest.lua — check GitHub URL or executor HTTP settings.")
-    return
-end
+if source then
+    print("[NightFall] Loading local homelandertest.lua")
+else
+    print("[NightFall] Downloading from URL")
+    source = httpGet(CONFIG.SCRIPT_URL)
 
-if source:sub(1, 1) == "{" then
-    warn("[NightFall] Got invalid response from script host.")
-    return
-end
+    if not source or source == "" then
+        warn("[NightFall] Failed to load homelandertest.lua — place it in your executor workspace or check HTTP settings.")
+        return
+    end
 
-if not source:find("2026-05-27-FULL-FIX") and not source:find("GUI-PAGES-FIX") and not source:find("REG-FIX-v3") and not source:find("REG-FIX") then
-    warn("[NightFall] homelandertest.lua on GitHub looks outdated — push the latest file from your PC.")
+    if source:sub(1, 1) == "{" then
+        warn("[NightFall] Got invalid response from script host.")
+        return
+    end
 end
 
 print("[NightFall] Loaded test build (keyless).")
