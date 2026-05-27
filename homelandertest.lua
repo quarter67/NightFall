@@ -498,23 +498,34 @@ local function beginHubDrag(input)
 end
 
 local function updateHubDrag(input)
-    if not hubDragging or input ~= hubDragInput then return end
-    if input.UserInputType ~= Enum.UserInputType.MouseMovement
-        and input.UserInputType ~= Enum.UserInputType.Touch then
-        return
+    if not hubDragging then return end
+    if input.UserInputType == Enum.UserInputType.MouseMovement then
+        -- MouseMovement is a different InputObject than the MouseButton1 that started the drag
+        local pos = UserInputService:GetMouseLocation()
+        local delta = pos - hubDragStart
+        MainFrame.Position = UDim2.new(
+            hubDragStartPos.X.Scale, hubDragStartPos.X.Offset + delta.X,
+            hubDragStartPos.Y.Scale, hubDragStartPos.Y.Offset + delta.Y
+        )
+        syncMainShadowPosition()
+    elseif input.UserInputType == Enum.UserInputType.Touch and input == hubDragInput then
+        local delta = input.Position - hubDragStart
+        MainFrame.Position = UDim2.new(
+            hubDragStartPos.X.Scale, hubDragStartPos.X.Offset + delta.X,
+            hubDragStartPos.Y.Scale, hubDragStartPos.Y.Offset + delta.Y
+        )
+        syncMainShadowPosition()
     end
-    local delta = input.Position - hubDragStart
-    MainFrame.Position = UDim2.new(
-        hubDragStartPos.X.Scale, hubDragStartPos.X.Offset + delta.X,
-        hubDragStartPos.Y.Scale, hubDragStartPos.Y.Offset + delta.Y
-    )
-    syncMainShadowPosition()
 end
 
 local function endHubDrag(input)
-    if hubDragInput and input == hubDragInput then
-        hubDragging = false
-        hubDragInput = nil
+    if not hubDragging then return end
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch then
+        if hubDragInput == nil or input == hubDragInput then
+            hubDragging = false
+            hubDragInput = nil
+        end
     end
 end
 
@@ -531,18 +542,31 @@ bindConnection(UserInputService.InputChanged:Connect(function(input)
         )
     end
 
-    if toggleDragging and input == toggleDragInput
-        and (input.UserInputType == Enum.UserInputType.MouseMovement
-            or input.UserInputType == Enum.UserInputType.Touch) then
-        local delta = input.Position - toggleDragStart
-        if delta.Magnitude > TOGGLE_DRAG_THRESHOLD then
-            toggleMoved = true
-        end
-        if toggleMoved then
-            UI.ToggleCube.Position = UDim2.new(
-                toggleStartPos.X.Scale, toggleStartPos.X.Offset + delta.X,
-                toggleStartPos.Y.Scale, toggleStartPos.Y.Offset + delta.Y
-            )
+    if toggleDragging then
+        if input.UserInputType == Enum.UserInputType.MouseMovement then
+            local pos = UserInputService:GetMouseLocation()
+            local delta = pos - toggleDragStart
+            if delta.Magnitude > TOGGLE_DRAG_THRESHOLD then
+                toggleMoved = true
+            end
+            if toggleMoved then
+                UI.ToggleCube.Position = UDim2.new(
+                    toggleStartPos.X.Scale, toggleStartPos.X.Offset + delta.X,
+                    toggleStartPos.Y.Scale, toggleStartPos.Y.Offset + delta.Y
+                )
+            end
+        elseif input == toggleDragInput
+            and input.UserInputType == Enum.UserInputType.Touch then
+            local delta = input.Position - toggleDragStart
+            if delta.Magnitude > TOGGLE_DRAG_THRESHOLD then
+                toggleMoved = true
+            end
+            if toggleMoved then
+                UI.ToggleCube.Position = UDim2.new(
+                    toggleStartPos.X.Scale, toggleStartPos.X.Offset + delta.X,
+                    toggleStartPos.Y.Scale, toggleStartPos.Y.Offset + delta.Y
+                )
+            end
         end
     end
 end))
@@ -618,8 +642,12 @@ UI.HeaderDrag.Active = true
 UI.HeaderDrag.Parent = Header
 
 bindConnection(UI.HeaderDrag.InputBegan:Connect(function(input, gameProcessed)
-    if gameProcessed then return end
+    if gameProcessed and input.UserInputType ~= Enum.UserInputType.Touch then return end
     beginHubDrag(input)
+end))
+
+bindConnection(UI.HeaderDrag.InputEnded:Connect(function(input)
+    endHubDrag(input)
 end))
 
 -- Desktop can also drag from the title area labels
@@ -2039,7 +2067,7 @@ UI.SwappedMouseToggle = createHubButton(
     "Right-Click Primary Mouse",
     "Use if your mouse buttons are swapped"
 )
-setHubToggle(UI.SwappedMouseToggle, true)
+setHubToggle(UI.SwappedMouseToggle, false)
 
 UI.HideMobileGuiToggle = createHubButton(
     SettingsList,
@@ -2111,7 +2139,7 @@ State.bloodEffectSavedMinZoom = 0.5
 State.bloodEffectBlockConnections = {}
 State.bloodEffectTracked = {}
 State.bloodEffectRestoringCamera = false
-State.swappedMouseButtons = true
+State.swappedMouseButtons = false
 State.spectateOrbiting = false
 State.cameraMouseLocked = false
 
@@ -5480,7 +5508,14 @@ local function getScreenMousePosition(useScreenCenter)
         end
     end
 
-    return UserInputService:GetMouseLocation()
+    local loc = UserInputService:GetMouseLocation()
+    local ok, inset = pcall(function()
+        return GuiService:GetGuiInset()
+    end)
+    if ok and inset then
+        return Vector2.new(loc.X - inset.X, loc.Y - inset.Y)
+    end
+    return loc
 end
 
 local function worldToScreen(worldPos)
@@ -5544,17 +5579,31 @@ local function moveMouseRelative(deltaX, deltaY)
         return true
     end
 
-    local moved = false
-    pcall(function()
-        if type(mousemoverel) == "function" then
-            mousemoverel(deltaX, deltaY)
-            moved = true
-        elseif syn and type(syn.mousemoverel) == "function" then
-            syn.mousemoverel(deltaX, deltaY)
-            moved = true
+    local movers = {}
+    if type(mousemoverel) == "function" then
+        table.insert(movers, mousemoverel)
+    end
+    if getgenv then
+        local env = getgenv()
+        if env and type(env.mousemoverel) == "function" then
+            table.insert(movers, env.mousemoverel)
         end
-    end)
-    return moved
+    end
+    if syn and type(syn.mousemoverel) == "function" then
+        table.insert(movers, syn.mousemoverel)
+    end
+
+    for _, mover in ipairs(movers) do
+        local moved = false
+        pcall(function()
+            mover(deltaX, deltaY)
+            moved = true
+        end)
+        if moved then
+            return true
+        end
+    end
+    return false
 end
 
 local function getPartScreenPositionFromPart(part)
@@ -5680,6 +5729,9 @@ local function aimCameraAtWorldPos(worldPos, dt)
     if alpha > 1 then alpha = 1 end
 
     local ok = pcall(function()
+        if camera.CameraType ~= Enum.CameraType.Scriptable then
+            camera.CameraType = Enum.CameraType.Scriptable
+        end
         local camPos = camera.CFrame.Position
         local target = CFrame.new(camPos, worldPos)
         camera.CFrame = camera.CFrame:Lerp(target, alpha)
@@ -5764,7 +5816,17 @@ bindConnection(UserInputService.InputBegan:Connect(function(input, gp)
         if State.freecamEnabled or State.spectating then
             return
         end
-        State.holdingRightClick = true
+        if not State.swappedMouseButtons and not hubDragging then
+            State.holdingRightClick = true
+        end
+        return
+    end
+
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        if State.swappedMouseButtons and not hubDragging
+            and not State.freecamEnabled and not State.spectating then
+            State.holdingRightClick = true
+        end
         return
     end
 
@@ -5815,8 +5877,15 @@ bindConnection(UserInputService.InputEnded:Connect(function(input)
         end
     end
     if input.UserInputType == Enum.UserInputType.MouseButton2 then
-        State.holdingRightClick = false
-        clearAimbotLock()
+        if not State.swappedMouseButtons then
+            State.holdingRightClick = false
+            clearAimbotLock()
+        end
+    elseif input.UserInputType == Enum.UserInputType.MouseButton1 then
+        if State.swappedMouseButtons then
+            State.holdingRightClick = false
+            clearAimbotLock()
+        end
     elseif input.KeyCode == Enum.KeyCode.E then
         State.holdingBloodManipKey = false
         if not State.bloodManipExecuting then
@@ -6364,7 +6433,7 @@ end
 
 end -- scope block 2d (aimbot + wiring · Luau local register limit)
 
-print("✅ NightFall TEST loaded — build 2026-05-27-FULL-FIX (keyless)")
-print("🎯 Toggle Aimbot in Combat tab → LOCK ON button appears on mobile, R/right-click on PC")
-print("💡 Top-left cube toggles the GUI | Drag the header bar to move on mobile")
+print("✅ NightFall TEST loaded — build 2026-05-27-DRAG-AIM-FIX (keyless)")
+print("🎯 Combat → enable Aimbot → hold right-click in-game (Settings: swap if buttons reversed)")
+print("💡 Drag the NightFall header bar to move the GUI | Top-left cube toggles visibility")
 print("💡 Tabs: Scanner · Movement · Combat · Troll · Misc")
