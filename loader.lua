@@ -18,7 +18,7 @@ local CONFIG = {
     MAX_ATTEMPTS = 5,
 }
 
-local LOADER_VERSION = "3.8.1-daki-delta"
+local LOADER_VERSION = "3.9-daki-delta"
 print("[NightFall] Loader v" .. LOADER_VERSION)
 
 local COLORS = {
@@ -49,6 +49,12 @@ end
 
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local IS_MOBILE = UserInputService.TouchEnabled
+
+local FONT_TITLE = IS_MOBILE and Enum.Font.SourceSansBold or Enum.Font.GothamBold
+local FONT_BODY = IS_MOBILE and Enum.Font.SourceSans or Enum.Font.GothamMedium
+local FONT_BUTTON = IS_MOBILE and Enum.Font.SourceSansSemibold or Enum.Font.GothamSemibold
 
 local function trim(value)
     return (value or ""):gsub("^%s+", ""):gsub("%s+$", "")
@@ -289,14 +295,23 @@ local function httpRequestRaw(url, method, body, headers)
 end
 
 local function getGuiParent()
-    local player = Players.LocalPlayer
-    if player then
-        local playerGui = player:FindFirstChild("PlayerGui")
-        if playerGui then
-            return playerGui
+    if typeof(gethui) == "function" then
+        local ok, hui = pcall(gethui)
+        if ok and hui then
+            return hui
         end
     end
     return game:GetService("CoreGui")
+end
+
+local function protectGui(gui)
+    pcall(function()
+        if syn and typeof(syn.protect_gui) == "function" then
+            syn.protect_gui(gui)
+        elseif typeof(protectgui) == "function" then
+            protectgui(gui)
+        end
+    end)
 end
 
 local LoadingOverlay = nil
@@ -320,28 +335,31 @@ local function showLoadingOverlay(message)
     gui.Name = "NightFallLoaderOverlay"
     gui.ResetOnSpawn = false
     gui.IgnoreGuiInset = true
-    gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-    gui.DisplayOrder = 200
+    gui.ZIndexBehavior = Enum.ZIndexBehavior.Global
+    gui.DisplayOrder = 999999
     gui.Parent = getGuiParent()
+    protectGui(gui)
 
     local backdrop = Instance.new("Frame")
     backdrop.Name = "Backdrop"
     backdrop.Size = UDim2.fromScale(1, 1)
     backdrop.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-    backdrop.BackgroundTransparency = 0.45
+    backdrop.BackgroundTransparency = IS_MOBILE and 0.35 or 0.45
     backdrop.BorderSizePixel = 0
     backdrop.Active = false
+    backdrop.ZIndex = 1
     backdrop.Parent = gui
 
     local card = Instance.new("Frame")
     card.Name = "LoadingCard"
     card.AnchorPoint = Vector2.new(0.5, 0.5)
     card.Position = UDim2.fromScale(0.5, 0.5)
-    card.Size = UDim2.new(0, 320, 0, 140)
+    card.Size = IS_MOBILE and UDim2.new(0.88, 0, 0, 168) or UDim2.new(0, 320, 0, 140)
     card.BackgroundColor3 = COLORS.bg
     card.BackgroundTransparency = 0.05
     card.BorderSizePixel = 0
     card.Active = false
+    card.ZIndex = 2
     card.Parent = gui
 
     local cardCorner = Instance.new("UICorner")
@@ -369,8 +387,8 @@ local function showLoadingOverlay(message)
     title.Size = UDim2.new(1, -40, 0, 34)
     title.Position = UDim2.new(0, 32, 0, 22)
     title.BackgroundTransparency = 1
-    title.Font = Enum.Font.GothamBold
-    title.TextSize = 28
+    title.Font = FONT_TITLE
+    title.TextSize = IS_MOBILE and 32 or 28
     title.TextColor3 = COLORS.text
     title.TextXAlignment = Enum.TextXAlignment.Left
     title.Text = "Loading"
@@ -381,8 +399,8 @@ local function showLoadingOverlay(message)
     subtitle.Size = UDim2.new(1, -40, 0, 44)
     subtitle.Position = UDim2.new(0, 32, 0, 62)
     subtitle.BackgroundTransparency = 1
-    subtitle.Font = Enum.Font.GothamMedium
-    subtitle.TextSize = 13
+    subtitle.Font = FONT_BODY
+    subtitle.TextSize = IS_MOBILE and 15 or 13
     subtitle.TextColor3 = COLORS.textMuted
     subtitle.TextXAlignment = Enum.TextXAlignment.Left
     subtitle.TextYAlignment = Enum.TextYAlignment.Top
@@ -395,8 +413,8 @@ local function showLoadingOverlay(message)
     dots.Size = UDim2.new(1, -40, 0, 20)
     dots.Position = UDim2.new(0, 32, 1, -34)
     dots.BackgroundTransparency = 1
-    dots.Font = Enum.Font.GothamBold
-    dots.TextSize = 18
+    dots.Font = FONT_TITLE
+    dots.TextSize = IS_MOBILE and 22 or 18
     dots.TextColor3 = COLORS.accentLight
     dots.TextXAlignment = Enum.TextXAlignment.Left
     dots.Text = "..."
@@ -614,13 +632,16 @@ local function createKeyUI()
     local gui = Instance.new("ScreenGui")
     gui.Name = "NightFallKeyUI"
     gui.ResetOnSpawn = false
-    gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-    gui.DisplayOrder = 100
+    gui.IgnoreGuiInset = true
+    gui.ZIndexBehavior = Enum.ZIndexBehavior.Global
+    gui.DisplayOrder = 999999
     gui.Parent = getGuiParent()
+    protectGui(gui)
 
     local root = Instance.new("Frame")
-    root.Size = UDim2.new(0, 420, 0, 300)
-    root.Position = UDim2.new(0.5, -210, 0.5, -150)
+    root.Size = IS_MOBILE and UDim2.new(0.92, 0, 0, 320) or UDim2.new(0, 420, 0, 300)
+    root.AnchorPoint = Vector2.new(0.5, 0.5)
+    root.Position = UDim2.fromScale(0.5, 0.5)
     root.BackgroundColor3 = COLORS.bg
     root.BorderSizePixel = 0
     root.Parent = gui
@@ -640,8 +661,8 @@ local function createKeyUI()
     title.Position = UDim2.new(0, 28, 0, 16)
     title.BackgroundTransparency = 1
     title.Text = "NightFall"
-    title.Font = Enum.Font.GothamBold
-    title.TextSize = 22
+    title.Font = FONT_TITLE
+    title.TextSize = IS_MOBILE and 24 or 22
     title.TextColor3 = COLORS.text
     title.TextXAlignment = Enum.TextXAlignment.Left
     title.Parent = root
@@ -651,8 +672,8 @@ local function createKeyUI()
     subtitle.Position = UDim2.new(0, 28, 0, 42)
     subtitle.BackgroundTransparency = 1
     subtitle.Text = "Enter your key to continue"
-    subtitle.Font = Enum.Font.GothamMedium
-    subtitle.TextSize = 12
+    subtitle.Font = FONT_BODY
+    subtitle.TextSize = IS_MOBILE and 14 or 12
     subtitle.TextColor3 = COLORS.textMuted
     subtitle.TextXAlignment = Enum.TextXAlignment.Left
     subtitle.Parent = root
@@ -662,8 +683,8 @@ local function createKeyUI()
     status.Position = UDim2.new(0, 16, 0, 72)
     status.BackgroundTransparency = 1
     status.Text = "Don't have a key? Click Get Key below."
-    status.Font = Enum.Font.GothamMedium
-    status.TextSize = 11
+    status.Font = FONT_BODY
+    status.TextSize = IS_MOBILE and 13 or 11
     status.TextColor3 = COLORS.textMuted
     status.TextXAlignment = Enum.TextXAlignment.Left
     status.TextWrapped = true
@@ -677,8 +698,8 @@ local function createKeyUI()
     box.PlaceholderText = "NF-XXXX-XXXX-XXXX"
     box.PlaceholderColor3 = COLORS.textMuted
     box.Text = ""
-    box.Font = Enum.Font.GothamMedium
-    box.TextSize = 14
+    box.Font = FONT_BODY
+    box.TextSize = IS_MOBILE and 16 or 14
     box.ClearTextOnFocus = false
     box.Parent = root
     corner(box, 10)
@@ -695,8 +716,8 @@ local function createKeyUI()
     getKeyBtn.BackgroundColor3 = COLORS.surface
     getKeyBtn.Text = "Get Key"
     getKeyBtn.TextColor3 = COLORS.text
-    getKeyBtn.Font = Enum.Font.GothamSemibold
-    getKeyBtn.TextSize = 14
+    getKeyBtn.Font = FONT_BUTTON
+    getKeyBtn.TextSize = IS_MOBILE and 16 or 14
     getKeyBtn.AutoButtonColor = false
     getKeyBtn.Parent = root
     corner(getKeyBtn, 10)
@@ -708,8 +729,8 @@ local function createKeyUI()
     submitBtn.BackgroundColor3 = COLORS.accent
     submitBtn.Text = "Continue"
     submitBtn.TextColor3 = COLORS.text
-    submitBtn.Font = Enum.Font.GothamBold
-    submitBtn.TextSize = 14
+    submitBtn.Font = FONT_TITLE
+    submitBtn.TextSize = IS_MOBILE and 16 or 14
     submitBtn.AutoButtonColor = false
     submitBtn.Parent = root
     corner(submitBtn, 10)
@@ -719,8 +740,8 @@ local function createKeyUI()
     hint.Position = UDim2.new(0, 16, 0, 200)
     hint.BackgroundTransparency = 1
     hint.Text = "Complete ad steps on the website. Key saves locally after login."
-    hint.Font = Enum.Font.GothamMedium
-    hint.TextSize = 11
+    hint.Font = FONT_BODY
+    hint.TextSize = IS_MOBILE and 13 or 11
     hint.TextColor3 = COLORS.textMuted
     hint.TextWrapped = true
     hint.TextXAlignment = Enum.TextXAlignment.Left
