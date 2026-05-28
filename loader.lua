@@ -16,10 +16,12 @@ local CONFIG = {
 
     KEY_CACHE_PATH = "ScriptHub/nightfall_key.txt",
     MAX_ATTEMPTS = 5,
+    DOWNLOAD_TIMEOUT = 45,
+    KEYLESS_FALLBACK_URL = "https://raw.githubusercontent.com/quarter67/NightFall/main/script/improved_script.lua",
 }
 
-local LOADER_VERSION = "4.1.5-keyless"
-local LOADER_BUILD = "2026-05-27-instant-key-ui"
+local LOADER_VERSION = "4.1.6-keyless"
+local LOADER_BUILD = "2026-05-27-keyless-download-fix"
 print("[NightFall] Loader v" .. LOADER_VERSION .. " (" .. LOADER_BUILD .. ")")
 
 local COLORS = {
@@ -708,27 +710,65 @@ local function downloadScript(key)
     return source, nil
 end
 
-local function downloadScriptKeyless()
-    local source, dlErr = httpRequestRaw(
-        API_BASE_URL .. "/api/script-keyless",
-        "GET",
-        nil,
-        { ["Accept"] = "text/plain, application/json, */*" }
-    )
+local function runAsync(action, timeoutSec)
+    local finished = false
+    local out = { nil, nil }
+    task.spawn(function()
+        local ok, a, b = pcall(action)
+        if ok then
+            out[1], out[2] = a, b
+        else
+            out[2] = tostring(a)
+        end
+        finished = true
+    end)
 
-    if not source then
-        local url = string.format(
-            "%s/api/script-keyless?t=%s",
-            API_BASE_URL,
-            tostring(os.time())
-        )
-        source, dlErr = httpRequestRaw(url, "GET")
+    local deadline = os.clock() + (timeoutSec or CONFIG.DOWNLOAD_TIMEOUT or 45)
+    while not finished and os.clock() < deadline do
+        enableRobloxMovement()
+        task.wait(0.15)
     end
 
-    if not source then
-        return nil, dlErr or "Failed to download keyless script."
+    if not finished then
+        return nil, "Download timed out. Check your connection or try again."
     end
+    return out[1], out[2]
+end
 
+local function showDownloadStatus(message)
+    message = message or "Downloading..."
+    if IS_MOBILE then
+        print("[NightFall] " .. message)
+        enableRobloxMovement()
+        return
+    end
+    showLoadingOverlay(message)
+end
+
+local function finishLoaderCleanup()
+    movementKeeperRunning = false
+    destroyLoadingOverlay()
+    hideLoadingOverlay()
+    enableRobloxMovement()
+end
+
+local movementKeeperRunning = false
+
+local function startMovementKeeper()
+    if movementKeeperRunning then return end
+    movementKeeperRunning = true
+    task.spawn(function()
+        while movementKeeperRunning do
+            enableRobloxMovement()
+            task.wait(0.5)
+        end
+    end)
+end
+
+local function parseDownloadSource(source)
+    if not source or source == "" then
+        return nil, "Empty script response"
+    end
     if source:sub(1, 1) == "{" then
         local decodeOk, data = pcall(function()
             return HttpService:JSONDecode(source)
@@ -737,8 +777,61 @@ local function downloadScriptKeyless()
             return nil, data.error
         end
     end
-
+    if #source < 500 then
+        return nil, "Script response too small — server may be offline"
+    end
     return source, nil
+end
+
+local function downloadScriptKeyless()
+    local function tryServer()
+        local source, dlErr = httpRequestRaw(
+            API_BASE_URL .. "/api/script-keyless?t=" .. tostring(os.time()),
+            "GET",
+            nil,
+            { ["Accept"] = "text/plain, application/json, */*" }
+        )
+        if not source then
+            source, dlErr = httpRequestRaw(
+                API_BASE_URL .. "/api/script-keyless",
+                "GET",
+                nil,
+                { ["Accept"] = "text/plain, application/json, */*" }
+            )
+        end
+        if not source then
+            return nil, dlErr or "Key server unreachable"
+        end
+        return parseDownloadSource(source)
+    end
+
+    local source, err = runAsync(tryServer, CONFIG.DOWNLOAD_TIMEOUT)
+    if source then
+        print("[NightFall] Downloaded keyless script from key server.")
+        return source, nil
+    end
+
+    warn("[NightFall] Key server failed: " .. tostring(err) .. " — trying GitHub fallback...")
+    local function tryGitHub()
+        local url = string.format(
+            "%s?t=%s",
+            CONFIG.KEYLESS_FALLBACK_URL,
+            tostring(os.time())
+        )
+        local raw, dlErr = httpRequestRaw(url, "GET", nil, { ["Accept"] = "text/plain, */*" })
+        if not raw then
+            return nil, dlErr or "GitHub fallback failed"
+        end
+        return parseDownloadSource(raw)
+    end
+
+    source, err = runAsync(tryGitHub, CONFIG.DOWNLOAD_TIMEOUT)
+    if source then
+        print("[NightFall] Downloaded keyless script from GitHub fallback.")
+        return source, nil
+    end
+
+    return nil, err or "Failed to download keyless script."
 end
 
 local KEYLESS_SENTINEL = "__NF_KEYLESS__"
@@ -1026,11 +1119,30 @@ local function createKeyUI()
     local function onKeylessChosen()
         if done then return end
         done = true
+        setLoaderFlags(true, nil)
         print("[NightFall] Keyless selected — downloading...")
-        setStatus("Loading keyless version...", COLORS.textMuted)
-        task.defer(function()
-            pcall(function() gui:Destroy() end)
-            keyReady:Fire(KEYLESS_SENTINEL)
+        setStatus("Downloading keyless version...", COLORS.textMuted)
+        keylessBtn.Text = "Downloading..."
+        submitBtn.Active = false
+        getKeyBtn.Active = false
+        keylessBtn.Active = false
+        task.spawn(function()
+            startMovementKeeper()
+            showDownloadStatus("Downloading keyless NightFall...")
+            local source, dlErr = downloadScriptKeyless()
+            finishLoaderCleanup()
+            if source then
+                pcall(function() gui:Destroy() end)
+                keyReady:Fire(KEYLESS_SENTINEL, source)
+            else
+                done = false
+                setStatus("Download failed — tap keyless to retry", COLORS.danger)
+                keylessBtn.Text = "Continue with keyless version"
+                submitBtn.Active = true
+                getKeyBtn.Active = true
+                keylessBtn.Active = true
+                warn("[NightFall] Keyless download failed: " .. tostring(dlErr))
+            end
         end)
     end
 
@@ -1050,7 +1162,8 @@ local function acquireKey()
 end
 
 local function runDownloadedSource(downloadedSource, keylessMode)
-    hideLoadingOverlay()
+    finishLoaderCleanup()
+    startMovementKeeper()
     enableRobloxMovement()
 
     if keylessMode then
@@ -1082,21 +1195,20 @@ local function runDownloadedSource(downloadedSource, keylessMode)
 
     local compile = getCompileFn()
     if type(compile) ~= "function" then
-        destroyLoadingOverlay()
+        finishLoaderCleanup()
         warn("[NightFall] Your executor does not support loadstring/load — cannot run the script.")
         return
     end
 
     local runScript, compileErr = compile(downloadedSource, "NightFall")
     if type(runScript) ~= "function" then
-        destroyLoadingOverlay()
+        finishLoaderCleanup()
         warn("[NightFall] Failed to compile script: " .. tostring(compileErr or runScript))
         return
     end
 
     local ok, runErr = pcall(runScript)
-    destroyLoadingOverlay()
-    enableRobloxMovement()
+    finishLoaderCleanup()
     if not ok then
         warn("[NightFall] Script error: " .. tostring(runErr))
     end
@@ -1118,59 +1230,48 @@ end
 print("[NightFall] API -> " .. API_BASE_URL)
 refreshApiUrlAsync()
 
-local keyOk, keyResult = pcall(acquireKey)
+local keyResult, keylessSource
+local keyOk, keyUiErr = pcall(function()
+    keyResult, keylessSource = acquireKey()
+end)
 if not keyOk then
-    destroyLoadingOverlay()
-    warn("[NightFall] Key UI failed: " .. tostring(keyResult))
+    finishLoaderCleanup()
+    warn("[NightFall] Key UI failed: " .. tostring(keyUiErr))
     return
 end
 if not keyResult then
-    destroyLoadingOverlay()
+    finishLoaderCleanup()
     warn("[NightFall] Loader cancelled.")
     return
 end
 
 local isKeyless = keyResult == KEYLESS_SENTINEL
 setLoaderFlags(isKeyless, isKeyless and nil or keyResult)
+
 if isKeyless then
     print("[NightFall] Keyless mode — premium features disabled.")
-else
-    print("[NightFall] Premium key accepted.")
-end
-
-showLoadingOverlay(isKeyless and "Downloading keyless NightFall..." or "Downloading NightFall...")
-
-local movementKeeperRunning = true
-if IS_MOBILE then
-    task.spawn(function()
-        while movementKeeperRunning do
-            enableRobloxMovement()
-            task.wait(1)
-        end
-    end)
-end
-
-local downloadedSource = nil
-local downloadError = nil
-local downloadDone = Instance.new("BindableEvent")
-
-task.spawn(function()
-    if isKeyless then
-        downloadedSource, downloadError = downloadScriptKeyless()
-    else
-        downloadedSource, downloadError = downloadScript(keyResult)
+    if type(keylessSource) ~= "string" then
+        finishLoaderCleanup()
+        warn("[NightFall] Keyless download did not return a script.")
+        return
     end
-    downloadDone:Fire()
-end)
+    runDownloadedSource(keylessSource, true)
+    return
+end
 
-downloadDone.Event:Wait()
-movementKeeperRunning = false
+print("[NightFall] Premium key accepted.")
+showDownloadStatus("Downloading NightFall...")
+startMovementKeeper()
+
+local downloadedSource, downloadError = runAsync(function()
+    return downloadScript(keyResult)
+end, CONFIG.DOWNLOAD_TIMEOUT)
+finishLoaderCleanup()
 
 if not downloadedSource then
-    destroyLoadingOverlay()
     warn("[NightFall] " .. tostring(downloadError))
     return
 end
 
-setLoaderFlags(isKeyless, isKeyless and nil or keyResult)
-runDownloadedSource(downloadedSource, isKeyless)
+setLoaderFlags(false, keyResult)
+runDownloadedSource(downloadedSource, false)
