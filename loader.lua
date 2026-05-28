@@ -18,8 +18,9 @@ local CONFIG = {
     MAX_ATTEMPTS = 5,
 }
 
-local LOADER_VERSION = "4.1.3-keyless"
-print("[NightFall] Loader v" .. LOADER_VERSION)
+local LOADER_VERSION = "4.1.4-keyless"
+local LOADER_BUILD = "2026-05-27-mobile-keyless"
+print("[NightFall] Loader v" .. LOADER_VERSION .. " (" .. LOADER_BUILD .. ")")
 
 local COLORS = {
     bg = Color3.fromRGB(13, 14, 18),
@@ -105,7 +106,7 @@ local HWID = getHwid()
 
 local DEFAULT_HEADERS = {
     ["Accept"] = "application/json, text/plain, */*",
-    ["User-Agent"] = "NightFallLoader/3.7",
+    ["User-Agent"] = "NightFallLoader/" .. LOADER_VERSION,
 }
 
 local function mergeHeaders(custom)
