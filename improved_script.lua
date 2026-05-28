@@ -1,4 +1,4 @@
--- BUILD: 2026-05-27-MOBILE-MOVE-FIX5
+-- BUILD: 2026-05-27-MOBILE-MOVE-FIX6
 -- NightFall production script (loaded via loader.lua - do not share directly)
 
 local NF = { State = {}, UI = {}, F = {}, COLORS = {}, CONST = {} }
@@ -93,6 +93,10 @@ local function resolveGuiParent()
         local ok, hui = pcall(gethui)
         if ok and hui then return hui end
     end
+    if State.isMobile and player then
+        local pg = player:FindFirstChild("PlayerGui")
+        if pg then return pg end
+    end
     return CoreGui
 end
 
@@ -123,9 +127,33 @@ end
 
 dismissNightFallLoaderUi()
 
-if State.isMobile then
+local function mobileUnblockInput()
+    if not State.isMobile then return end
     pcall(function() GuiService.TouchControlsEnabled = true end)
+    pcall(function()
+        local char = player.Character
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        if hum then
+            hum.PlatformStand = false
+            hum.AutoRotate = true
+            if hum.WalkSpeed <= 0 then
+                hum.WalkSpeed = 16
+            end
+        end
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        if hrp then
+            hrp.Anchored = false
+        end
+    end)
 end
+
+mobileUnblockInput()
+task.spawn(function()
+    for _ = 1, 60 do
+        mobileUnblockInput()
+        task.wait(1)
+    end
+end)
 
 -- Workspace.CurrentCamera is replaced by Roblox on death/respawn and after some
 -- camera-control scripts run. Keep our local `camera` reference fresh so the
@@ -768,9 +796,6 @@ local function setHubVisible(visible)
     MainFrame.Visible = visible
     if UI.MainShadow then
         UI.MainShadow.Visible = visible and not State.isMobile
-    end
-    if State.isMobile and UI.ScreenGui then
-        UI.ScreenGui.Enabled = visible
     end
 end
 
@@ -6264,13 +6289,17 @@ local updateFailsafe = F.updateFailsafe
 local teleportToSafeZone = F.teleportToSafeZone
 
 local function enableRobloxMovementControls()
+    pcall(function() GuiService.TouchControlsEnabled = true end)
+    if State.isMobile then
+        return
+    end
     pcall(function()
         local playerScripts = player:FindFirstChild("PlayerScripts")
         if not playerScripts then return end
         local playerModuleScript = playerScripts:FindFirstChild("PlayerModule")
         if not playerModuleScript then return end
-        local playerModule = require(playerModuleScript)
-        if not playerModule or type(playerModule.GetControls) ~= "function" then return end
+        local ok, playerModule = pcall(require, playerModuleScript)
+        if not ok or not playerModule or type(playerModule.GetControls) ~= "function" then return end
         local controls = playerModule:GetControls()
         if controls and controls.Enable then
             controls:Enable(true)
@@ -7383,7 +7412,7 @@ end
 
 end -- scope block 2d (aimbot + wiring)
 
-print("[NightFall] Loaded - build 2026-05-27-MOBILE-MOVE-FIX5")
+print("[NightFall] Loaded - build 2026-05-27-MOBILE-MOVE-FIX6")
 print("[NightFall] Aimbot: Combat tab - PC hold RMB - Mobile tap LOCK ON")
 if State.isPremium then
     print("[NightFall] A-Train Kill: Premium tab - PC press Q - Mobile tap DASH")
