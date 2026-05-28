@@ -673,6 +673,14 @@ local function createKeyUI()
     gui.Parent = getGuiParent()
     protectGui(gui)
 
+    local keyBackdrop = Instance.new("Frame")
+    keyBackdrop.Name = "Backdrop"
+    keyBackdrop.Size = UDim2.fromScale(1, 1)
+    keyBackdrop.BackgroundTransparency = 1
+    keyBackdrop.BorderSizePixel = 0
+    keyBackdrop.Active = false
+    keyBackdrop.Parent = gui
+
     local root = Instance.new("Frame")
     root.Size = IS_MOBILE and UDim2.new(0.92, 0, 0, 360) or UDim2.new(0, 420, 0, 360)
     root.ClipsDescendants = false
@@ -680,7 +688,7 @@ local function createKeyUI()
     root.Position = UDim2.fromScale(0.5, 0.5)
     root.BackgroundColor3 = COLORS.bg
     root.BorderSizePixel = 0
-    root.Parent = gui
+    root.Parent = keyBackdrop
     corner(root, 20)
     stroke(root)
 
@@ -925,6 +933,8 @@ local function acquireKey()
 end
 
 local function runDownloadedSource(downloadedSource)
+    destroyLoadingOverlay()
+
     setLoadingMessage("Starting NightFall...")
     task.wait(0.05)
 
