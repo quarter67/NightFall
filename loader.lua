@@ -18,8 +18,8 @@ local CONFIG = {
     MAX_ATTEMPTS = 5,
 }
 
-local LOADER_VERSION = "4.1.4-keyless"
-local LOADER_BUILD = "2026-05-27-mobile-keyless"
+local LOADER_VERSION = "4.1.5-keyless"
+local LOADER_BUILD = "2026-05-27-instant-key-ui"
 print("[NightFall] Loader v" .. LOADER_VERSION .. " (" .. LOADER_BUILD .. ")")
 
 local COLORS = {
@@ -313,6 +313,34 @@ local function enableRobloxMovement()
     end)
 end
 
+local function destroyStaleLoaderUi()
+    local parents = {}
+    local plr = Players.LocalPlayer
+    if plr then
+        local pg = plr:FindFirstChild("PlayerGui")
+        if pg then table.insert(parents, pg) end
+    end
+    table.insert(parents, game:GetService("CoreGui"))
+    if typeof(gethui) == "function" then
+        local ok, hui = pcall(gethui)
+        if ok and hui then table.insert(parents, hui) end
+    end
+    for _, parent in ipairs(parents) do
+        for _, name in ipairs({ "NightFallLoaderOverlay", "NightFallKeyUI" }) do
+            local gui = parent:FindFirstChild(name)
+            if gui then
+                pcall(function() gui:Destroy() end)
+            end
+        end
+    end
+end
+
+local function waitForLocalPlayer()
+    local plr = Players.LocalPlayer
+    if plr then return plr end
+    return Players.PlayerAdded:Wait()
+end
+
 local function getGuiParent()
     if IS_MOBILE then
         local plr = Players.LocalPlayer
@@ -555,17 +583,20 @@ local function resolveApiUrl()
     return nil
 end
 
-local API_BASE_URL = resolveApiUrl()
-if not API_BASE_URL then
-    warn("[NightFall] No valid HTTPS API URL. Upload api-url.txt to GitHub with your tunnel URL.")
-    return
+local API_BASE_URL = trim(CONFIG.API_BASE_URL)
+if not isValidApiUrl(API_BASE_URL) then
+    API_BASE_URL = resolveApiUrl()
 end
 
-print("[NightFall] API → " .. API_BASE_URL)
-if IS_MOBILE then
-    enableRobloxMovement()
+local function refreshApiUrlAsync()
+    task.spawn(function()
+        local url = resolveApiUrl()
+        if url and url ~= API_BASE_URL then
+            API_BASE_URL = url
+            print("[NightFall] API updated -> " .. url)
+        end
+    end)
 end
-showLoadingOverlay(IS_MOBILE and "NightFall — tap keyless or enter key" or "Connecting to key server...")
 
 local function fetchGetKeyUrl()
     local data, err = httpRequestJson(
@@ -894,24 +925,26 @@ local function createKeyUI()
     corner(keylessBtn, 10)
     stroke(keylessBtn)
 
-    getKeyBtn.MouseEnter:Connect(function()
-        tween(getKeyBtn, { BackgroundColor3 = COLORS.surfaceHover })
-    end)
-    getKeyBtn.MouseLeave:Connect(function()
-        tween(getKeyBtn, { BackgroundColor3 = COLORS.surface })
-    end)
-    submitBtn.MouseEnter:Connect(function()
-        tween(submitBtn, { BackgroundColor3 = COLORS.accentLight })
-    end)
-    submitBtn.MouseLeave:Connect(function()
-        tween(submitBtn, { BackgroundColor3 = COLORS.accent })
-    end)
-    keylessBtn.MouseEnter:Connect(function()
-        tween(keylessBtn, { BackgroundColor3 = COLORS.surfaceHover, TextColor3 = COLORS.text })
-    end)
-    keylessBtn.MouseLeave:Connect(function()
-        tween(keylessBtn, { BackgroundColor3 = COLORS.surface, TextColor3 = COLORS.textMuted })
-    end)
+    if not IS_MOBILE then
+        getKeyBtn.MouseEnter:Connect(function()
+            tween(getKeyBtn, { BackgroundColor3 = COLORS.surfaceHover })
+        end)
+        getKeyBtn.MouseLeave:Connect(function()
+            tween(getKeyBtn, { BackgroundColor3 = COLORS.surface })
+        end)
+        submitBtn.MouseEnter:Connect(function()
+            tween(submitBtn, { BackgroundColor3 = COLORS.accentLight })
+        end)
+        submitBtn.MouseLeave:Connect(function()
+            tween(submitBtn, { BackgroundColor3 = COLORS.accent })
+        end)
+        keylessBtn.MouseEnter:Connect(function()
+            tween(keylessBtn, { BackgroundColor3 = COLORS.surfaceHover, TextColor3 = COLORS.text })
+        end)
+        keylessBtn.MouseLeave:Connect(function()
+            tween(keylessBtn, { BackgroundColor3 = COLORS.surface, TextColor3 = COLORS.textMuted })
+        end)
+    end
 
     local cached = fsRead(CONFIG.KEY_CACHE_PATH)
     if cached and cached ~= "" then
@@ -1011,6 +1044,7 @@ local function createKeyUI()
 end
 
 local function acquireKey()
+    destroyLoadingOverlay()
     hideLoadingOverlay()
     return createKeyUI()
 end
@@ -1068,7 +1102,28 @@ local function runDownloadedSource(downloadedSource, keylessMode)
     end
 end
 
-local keyResult = acquireKey()
+-- Startup (all functions must be defined above this line)
+destroyStaleLoaderUi()
+waitForLocalPlayer()
+if IS_MOBILE then
+    enableRobloxMovement()
+end
+
+if not API_BASE_URL or not isValidApiUrl(API_BASE_URL) then
+    destroyLoadingOverlay()
+    warn("[NightFall] No valid HTTPS API URL. Set CONFIG.API_BASE_URL or api-url.txt on GitHub.")
+    return
+end
+
+print("[NightFall] API -> " .. API_BASE_URL)
+refreshApiUrlAsync()
+
+local keyOk, keyResult = pcall(acquireKey)
+if not keyOk then
+    destroyLoadingOverlay()
+    warn("[NightFall] Key UI failed: " .. tostring(keyResult))
+    return
+end
 if not keyResult then
     destroyLoadingOverlay()
     warn("[NightFall] Loader cancelled.")
