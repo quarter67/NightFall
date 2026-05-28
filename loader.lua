@@ -18,7 +18,7 @@ local CONFIG = {
     MAX_ATTEMPTS = 5,
 }
 
-local LOADER_VERSION = "4.0-unified"
+local LOADER_VERSION = "4.1-keyless"
 print("[NightFall] Loader v" .. LOADER_VERSION)
 
 local COLORS = {
@@ -598,6 +598,41 @@ local function downloadScript(key)
     return source, nil
 end
 
+local function downloadScriptKeyless()
+    local source, dlErr = httpRequestRaw(
+        API_BASE_URL .. "/api/script-keyless",
+        "GET",
+        nil,
+        { ["Accept"] = "text/plain, application/json, */*" }
+    )
+
+    if not source then
+        local url = string.format(
+            "%s/api/script-keyless?t=%s",
+            API_BASE_URL,
+            tostring(os.time())
+        )
+        source, dlErr = httpRequestRaw(url, "GET")
+    end
+
+    if not source then
+        return nil, dlErr or "Failed to download keyless script."
+    end
+
+    if source:sub(1, 1) == "{" then
+        local decodeOk, data = pcall(function()
+            return HttpService:JSONDecode(source)
+        end)
+        if decodeOk and data and data.error then
+            return nil, data.error
+        end
+    end
+
+    return source, nil
+end
+
+local KEYLESS_SENTINEL = "__NF_KEYLESS__"
+
 local function createKeyUI()
     hideLoadingOverlay()
 
@@ -747,6 +782,20 @@ local function createKeyUI()
     hint.TextXAlignment = Enum.TextXAlignment.Left
     hint.Parent = root
 
+    local keylessBtn = Instance.new("TextButton")
+    keylessBtn.AnchorPoint = Vector2.new(0, 1)
+    keylessBtn.Size = UDim2.new(0, IS_MOBILE and 240 or 260, 0, 38)
+    keylessBtn.Position = UDim2.new(0, 16, 1, -16)
+    keylessBtn.BackgroundColor3 = COLORS.surface
+    keylessBtn.Text = "Continue with keyless version"
+    keylessBtn.TextColor3 = COLORS.textMuted
+    keylessBtn.Font = FONT_BUTTON
+    keylessBtn.TextSize = IS_MOBILE and 14 or 12
+    keylessBtn.AutoButtonColor = false
+    keylessBtn.Parent = gui
+    corner(keylessBtn, 10)
+    stroke(keylessBtn)
+
     getKeyBtn.MouseEnter:Connect(function()
         tween(getKeyBtn, { BackgroundColor3 = COLORS.surfaceHover })
     end)
@@ -758,6 +807,12 @@ local function createKeyUI()
     end)
     submitBtn.MouseLeave:Connect(function()
         tween(submitBtn, { BackgroundColor3 = COLORS.accent })
+    end)
+    keylessBtn.MouseEnter:Connect(function()
+        tween(keylessBtn, { BackgroundColor3 = COLORS.surfaceHover, TextColor3 = COLORS.text })
+    end)
+    keylessBtn.MouseLeave:Connect(function()
+        tween(keylessBtn, { BackgroundColor3 = COLORS.surface, TextColor3 = COLORS.textMuted })
     end)
 
     local cached = fsRead(CONFIG.KEY_CACHE_PATH)
@@ -837,56 +892,94 @@ local function createKeyUI()
 
     submitBtn.MouseButton1Click:Connect(trySubmit)
 
+    keylessBtn.MouseButton1Click:Connect(function()
+        if done then return end
+        done = true
+        setStatus("Loading keyless version...", COLORS.textMuted)
+        task.delay(0.2, function()
+            gui:Destroy()
+            keyReady:Fire(KEYLESS_SENTINEL)
+        end)
+    end)
+
     return keyReady.Event:Wait()
 end
 
 local function acquireKey()
-    showLoadingOverlay("Checking saved key...")
-
-    local cachedKey = fsRead(CONFIG.KEY_CACHE_PATH)
-    if cachedKey and cachedKey ~= "" then
-        local cachedResult = nil
-        local finished = Instance.new("BindableEvent")
-
-        task.spawn(function()
-            local valid, keyOrErr = validateKey(cachedKey)
-            if valid then
-                cachedResult = keyOrErr
-                print("[NightFall] Cached key accepted.")
-            else
-                warn("[NightFall] Cached key invalid: " .. tostring(keyOrErr))
-            end
-            finished:Fire()
-        end)
-
-        finished.Event:Wait()
-
-        if cachedResult then
-            return cachedResult
-        end
-    end
-
     hideLoadingOverlay()
     return createKeyUI()
 end
 
-local validatedKey = acquireKey()
-if not validatedKey then
+local function runDownloadedSource(downloadedSource)
+    setLoadingMessage("Starting NightFall...")
+    task.wait(0.05)
+
+    local function getCompileFn()
+        if type(loadstring) == "function" then return loadstring end
+        if type(load) == "function" then return load end
+        if getgenv then
+            local env = getgenv()
+            if env and type(env.loadstring) == "function" then return env.loadstring end
+            if env and type(env.load) == "function" then return env.load end
+        end
+        if getrenv then
+            local env = getrenv()
+            if env and type(env.loadstring) == "function" then return env.loadstring end
+            if env and type(env.load) == "function" then return env.load end
+        end
+        return nil
+    end
+
+    local compile = getCompileFn()
+    if type(compile) ~= "function" then
+        destroyLoadingOverlay()
+        warn("[NightFall] Your executor does not support loadstring/load — cannot run the script.")
+        return
+    end
+
+    local runScript, compileErr = compile(downloadedSource, "NightFall")
+    if type(runScript) ~= "function" then
+        destroyLoadingOverlay()
+        warn("[NightFall] Failed to compile script: " .. tostring(compileErr or runScript))
+        return
+    end
+
+    local ok, runErr = pcall(runScript)
     destroyLoadingOverlay()
-    warn("[NightFall] No valid key provided.")
+    if not ok then
+        warn("[NightFall] Script error: " .. tostring(runErr))
+    end
+end
+
+local keyResult = acquireKey()
+if not keyResult then
+    destroyLoadingOverlay()
+    warn("[NightFall] Loader cancelled.")
     return
 end
 
-getgenv().SCRIPT_KEY = validatedKey
+local isKeyless = keyResult == KEYLESS_SENTINEL
+if isKeyless then
+    getgenv().NF_KEYLESS = true
+    getgenv().SCRIPT_KEY = nil
+    print("[NightFall] Keyless mode — premium features disabled.")
+else
+    getgenv().NF_KEYLESS = false
+    getgenv().SCRIPT_KEY = keyResult
+end
 
-showLoadingOverlay("Downloading NightFall...")
+showLoadingOverlay(isKeyless and "Downloading keyless NightFall..." or "Downloading NightFall...")
 
 local downloadedSource = nil
 local downloadError = nil
 local downloadDone = Instance.new("BindableEvent")
 
 task.spawn(function()
-    downloadedSource, downloadError = downloadScript(validatedKey)
+    if isKeyless then
+        downloadedSource, downloadError = downloadScriptKeyless()
+    else
+        downloadedSource, downloadError = downloadScript(keyResult)
+    end
     downloadDone:Fire()
 end)
 
@@ -898,41 +991,4 @@ if not downloadedSource then
     return
 end
 
-setLoadingMessage("Starting NightFall...")
-task.wait(0.05)
-
-local function getCompileFn()
-    if type(loadstring) == "function" then return loadstring end
-    if type(load) == "function" then return load end
-    if getgenv then
-        local env = getgenv()
-        if env and type(env.loadstring) == "function" then return env.loadstring end
-        if env and type(env.load) == "function" then return env.load end
-    end
-    if getrenv then
-        local env = getrenv()
-        if env and type(env.loadstring) == "function" then return env.loadstring end
-        if env and type(env.load) == "function" then return env.load end
-    end
-    return nil
-end
-
-local compile = getCompileFn()
-if type(compile) ~= "function" then
-    destroyLoadingOverlay()
-    warn("[NightFall] Your executor does not support loadstring/load — cannot run the script.")
-    return
-end
-
-local runScript, compileErr = compile(downloadedSource, "NightFall")
-if type(runScript) ~= "function" then
-    destroyLoadingOverlay()
-    warn("[NightFall] Failed to compile script: " .. tostring(compileErr or runScript))
-    return
-end
-
-local ok, runErr = pcall(runScript)
-destroyLoadingOverlay()
-if not ok then
-    warn("[NightFall] Script error: " .. tostring(runErr))
-end
+runDownloadedSource(downloadedSource)
