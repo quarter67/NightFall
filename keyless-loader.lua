@@ -17,7 +17,7 @@ local LOCAL_PATHS = {
     "workspace/homelandertest.lua",
 }
 
-local LOADER_VERSION = "1.6-keyless"
+local LOADER_VERSION = "1.7-keyless"
 print("[NightFall] Keyless loader v" .. LOADER_VERSION)
 
 if game.PlaceId ~= CONFIG.REQUIRED_PLACE_ID then
@@ -120,30 +120,57 @@ local function httpGet(url)
     return nil
 end
 
-local function getCompileFn()
-    if type(loadstring) == "function" then return loadstring end
-    if type(load) == "function" then return load end
-    if getgenv then
-        local env = getgenv()
-        if env and type(env.loadstring) == "function" then return env.loadstring end
-        if env and type(env.load) == "function" then return env.load end
+local function getExecutorEnv()
+    if typeof(getgenv) == "function" then
+        local ok, env = pcall(getgenv)
+        if ok and type(env) == "table" then
+            return env
+        end
     end
-    if getrenv then
-        local env = getrenv()
-        if env and type(env.loadstring) == "function" then return env.loadstring end
-        if env and type(env.load) == "function" then return env.load end
+    if typeof(shared) == "table" then
+        return shared
     end
-    return nil
+    return _G
+end
+
+local function compileNightFallSource(source, chunkName)
+    chunkName = chunkName or "NightFallHomelanderTest"
+    local env = getExecutorEnv()
+
+    if type(load) == "function" then
+        local fn, err = load(source, chunkName, "t", env)
+        if type(fn) == "function" then
+            return fn, nil
+        end
+        if err then
+            warn("[NightFall] load() compile failed: " .. tostring(err))
+        end
+    end
+
+    local compile = loadstring
+    if type(compile) ~= "function" and env then
+        compile = env.loadstring or env.load
+    end
+    if type(compile) ~= "function" then
+        return nil, "No loadstring/load available"
+    end
+
+    local fn, err = compile(source, chunkName)
+    if type(fn) ~= "function" then
+        return nil, err or "compile returned nil (check script for Luau errors)"
+    end
+
+    pcall(function()
+        if setfenv then
+            setfenv(fn, env)
+        end
+    end)
+
+    return fn, nil
 end
 
 local function compileAndRun(source, label)
-    local compile = getCompileFn()
-    if type(compile) ~= "function" then
-        warn("[NightFall] Your executor does not support loadstring/load — cannot run the script.")
-        return false
-    end
-
-    local runScript, compileErr = compile(source, label or "NightFall")
+    local runScript, compileErr = compileNightFallSource(source, label or "NightFallHomelanderTest")
     if type(runScript) ~= "function" then
         warn("[NightFall] Failed to compile script: " .. tostring(compileErr or "unknown compile error"))
         return false

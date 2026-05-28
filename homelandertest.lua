@@ -48,6 +48,9 @@ end
 local root = nil
 local camera = Workspace.CurrentCamera
 
+local ejectScript
+
+do -- scope block 0 (core + GUI builders; Luau local register limit)
 local function detectMobileDevice()
     if typeof(getgenv) == "function" then
         local g = getgenv()
@@ -437,8 +440,6 @@ local function bindConnection(conn)
     table.insert(State.trackedConnections, conn)
     return conn
 end
-
-local ejectScript
 
 -- Safe root update with error handling
 local function updateRoot()
@@ -1311,8 +1312,8 @@ end))
 
 -- Blood manip on mobile is activated by holding your finger on a player
 -- (touch-hold detection ??? see InputBegan handler below).
-local bloodManipTouchInput = nil  -- tracks the specific touch used for blood manip
-local mobileCamTouch = nil        -- tracks touch used for freecam/spectate orbit on mobile
+State.bloodManipTouchInput = nil
+State.mobileCamTouch = nil
 
 -- ?????? FOV circle (shown at screen center when mobile aim is held) ??????????????????????????????????????????
 local FovGui = Instance.new("ScreenGui")
@@ -2002,7 +2003,96 @@ createTab("Troll", "???")
 createTab("Misc", "???")
 createTab("Settings", "???")
 
-do
+-- Export core helpers for later scope blocks (Luau 200-local limit)
+NF.F.bindConnection = bindConnection
+NF.F.tween = tween
+NF.F.applyCorner = applyCorner
+NF.F.applyStroke = applyStroke
+NF.F.fsRead = fsRead
+NF.F.fsWrite = fsWrite
+NF.F.updateRoot = updateRoot
+NF.F.getHumanoid = getHumanoid
+NF.F.getRoot = getRoot
+NF.F.createPage = createPage
+NF.F.switchTab = switchTab
+NF.F.createTab = createTab
+NF.F.createHubButton = createHubButton
+NF.F.setHubToggle = setHubToggle
+NF.F.createHubSlider = createHubSlider
+NF.F.createHubTextInput = createHubTextInput
+NF.F.createHubKeybindRow = createHubKeybindRow
+NF.F.setupMobileScroll = setupMobileScroll
+NF.F.scrollToVisible = scrollToVisible
+NF.F.createMiscFold = createMiscFold
+NF.F.setHubVisible = setHubVisible
+NF.F.setMobileOverlayEnabled = setMobileOverlayEnabled
+NF.F.refreshCamera = refreshCamera
+NF.F.restoreAimbotCamera = restoreAimbotCamera
+NF.F.isAimHoldActive = isAimHoldActive
+NF.F.isPcShiftLocked = isPcShiftLocked
+NF.F.refreshShiftLockState = refreshShiftLockState
+NF.F.handleShiftLockKeyPress = handleShiftLockKeyPress
+NF.F.inputToKeyCode = inputToKeyCode
+NF.F.isShiftLockKeyInput = isShiftLockKeyInput
+NF.F.getAimReferenceUsesCenter = getAimReferenceUsesCenter
+NF.F.syncPcAimHoldState = syncPcAimHoldState
+NF.F.ensurePcAimMouseFree = ensurePcAimMouseFree
+NF.F.syncPcAimCursorFromSystem = syncPcAimCursorFromSystem
+NF.F.saveAimbotSettings = saveAimbotSettings
+NF.F.loadAimbotSettings = loadAimbotSettings
+NF.F.onHeaderDragBegan = onHeaderDragBegan
+NF.F.makeMobileFlightBtn = makeMobileFlightBtn
+NF.pages = pages
+NF.tabButtons = tabButtons
+NF.miscFoldSetters = miscFoldSetters
+NF.GUI_PARENT = GUI_PARENT
+
+end -- scope block 0 (core + GUI builders; Luau local register limit)
+
+local bindConnection = NF.F.bindConnection
+local tween = NF.F.tween
+local applyCorner = NF.F.applyCorner
+local applyStroke = NF.F.applyStroke
+local fsRead = NF.F.fsRead
+local fsWrite = NF.F.fsWrite
+local updateRoot = NF.F.updateRoot
+local getHumanoid = NF.F.getHumanoid
+local getRoot = NF.F.getRoot
+local createPage = NF.F.createPage
+local switchTab = NF.F.switchTab
+local createTab = NF.F.createTab
+local createHubButton = NF.F.createHubButton
+local setHubToggle = NF.F.setHubToggle
+local createHubSlider = NF.F.createHubSlider
+local createHubTextInput = NF.F.createHubTextInput
+local createHubKeybindRow = NF.F.createHubKeybindRow
+local setupMobileScroll = NF.F.setupMobileScroll
+local scrollToVisible = NF.F.scrollToVisible
+local createMiscFold = NF.F.createMiscFold
+local setHubVisible = NF.F.setHubVisible
+local setMobileOverlayEnabled = NF.F.setMobileOverlayEnabled
+local refreshCamera = NF.F.refreshCamera
+local restoreAimbotCamera = NF.F.restoreAimbotCamera
+local isAimHoldActive = NF.F.isAimHoldActive
+local isPcShiftLocked = NF.F.isPcShiftLocked
+local refreshShiftLockState = NF.F.refreshShiftLockState
+local handleShiftLockKeyPress = NF.F.handleShiftLockKeyPress
+local inputToKeyCode = NF.F.inputToKeyCode
+local isShiftLockKeyInput = NF.F.isShiftLockKeyInput
+local getAimReferenceUsesCenter = NF.F.getAimReferenceUsesCenter
+local syncPcAimHoldState = NF.F.syncPcAimHoldState
+local ensurePcAimMouseFree = NF.F.ensurePcAimMouseFree
+local syncPcAimCursorFromSystem = NF.F.syncPcAimCursorFromSystem
+local saveAimbotSettings = NF.F.saveAimbotSettings
+local loadAimbotSettings = NF.F.loadAimbotSettings
+local onHeaderDragBegan = NF.F.onHeaderDragBegan
+local makeMobileFlightBtn = NF.F.makeMobileFlightBtn
+local pages = NF.pages
+local tabButtons = NF.tabButtons
+local miscFoldSetters = NF.miscFoldSetters
+local GUI_PARENT = NF.GUI_PARENT
+
+do -- scope block 1a-home (GUI · Luau local register limit)
 
 local HomePage = createPage("Home")
 local ScannerPage = createPage("Scanner")
@@ -6220,7 +6310,7 @@ NF.F.refreshPlayerESPScan = refreshPlayerESPScan
 
 end -- scope block 2c (player esp ? Luau local register limit)
 
-do -- scope block 2d (aimbot + wiring ? Luau local register limit)
+do -- scope block 2d (aimbot core ? Luau local register limit)
 
 local clearHighlight = F.clearHighlight
 local createPlayerESP = F.createPlayerESP
@@ -6656,6 +6746,91 @@ end
 return clearAimbotLock, updateAimbotLock, aimMouseAtHead
 end)()
 
+NF.F.clearAimbotLock = clearAimbotLock
+NF.F.updateAimbotLock = updateAimbotLock
+NF.F.aimMouseAtHead = aimMouseAtHead
+
+end -- scope block 2d (aimbot core; Luau local register limit)
+
+do -- scope block 2e (input + loops + wiring; Luau local register limit)
+
+local F = NF.F
+local clearAimbotLock = F.clearAimbotLock
+local updateAimbotLock = F.updateAimbotLock
+local aimMouseAtHead = F.aimMouseAtHead
+local clearHighlight = F.clearHighlight
+local createPlayerESP = F.createPlayerESP
+local updateTempVESP = F.updateTempVESP
+local updateMovementHacks = F.updateMovementHacks
+local updateFlight = F.updateFlight
+local updateSpin = F.updateSpin
+local setNoclip = F.setNoclip
+local getHumanoid = F.getHumanoid
+local getRoot = F.getRoot
+local updateSpeedHack = F.updateSpeedHack
+local isPlayerHomelander = F.isPlayerHomelander
+local setHubToggle = F.setHubToggle
+local resetMovementSettings = F.resetMovementSettings
+local resetTrollEffects = F.resetTrollEffects
+local stopDesyncEngine = F.stopDesyncEngine
+local stopSpectate = F.stopSpectate
+local startSpectate = F.startSpectate
+local refreshMiscPlayerList = F.refreshMiscPlayerList
+local setDesync = F.setDesync
+local flingHomelander = F.flingHomelander
+local skidFlingPlayer = F.skidFlingPlayer
+local flingSelf = F.flingSelf
+local setupCharacterMovement = F.setupCharacterMovement
+local applyJumpBoost = F.applyJumpBoost
+local applyJumpStats = F.applyJumpStats
+local tpRandomPlayer = F.tpRandomPlayer
+local bringPlayersToMe = F.bringPlayersToMe
+local playAnnoyingSound = F.playAnnoyingSound
+local setATrainKill = F.setATrainKill
+local executeATrainKill = F.executeATrainKill
+local startATrainDashHooks = F.startATrainDashHooks
+local clearAllTempVHighlights = F.clearAllTempVHighlights
+local clearAllTempVBillboards = F.clearAllTempVBillboards
+local applyMovementStatsNow = F.applyMovementStatsNow
+local stopFlight = F.stopFlight
+local onTempVPickedUp = F.onTempVPickedUp
+local updateSpectateCamera = F.updateSpectateCamera
+local removeFlightPhysics = F.removeFlightPhysics
+local beginCameraDrag = F.beginCameraDrag
+local endCameraDrag = F.endCameraDrag
+local applyCameraDragDelta = F.applyCameraDragDelta
+local updateFreecam = F.updateFreecam
+local stopFreecam = F.stopFreecam
+local setFreecam = F.setFreecam
+local updateBloodManipulator = F.updateBloodManipulator
+local updateBloodManipEffectBlock = F.updateBloodManipEffectBlock
+local stopBloodManipEffectBlock = F.stopBloodManipEffectBlock
+local resetBloodManipState = F.resetBloodManipState
+local setRemoveBloodManipEffects = F.setRemoveBloodManipEffects
+local updatePlayerESP = F.updatePlayerESP
+local refreshPlayerESPScan = F.refreshPlayerESPScan
+local updateFailsafe = F.updateFailsafe
+local teleportToSafeZone = F.teleportToSafeZone
+local bindConnection = F.bindConnection
+local tween = F.tween
+local refreshCamera = F.refreshCamera
+local restoreAimbotCamera = F.restoreAimbotCamera
+local isAimHoldActive = F.isAimHoldActive
+local isPcShiftLocked = F.isPcShiftLocked
+local refreshShiftLockState = F.refreshShiftLockState
+local handleShiftLockKeyPress = F.handleShiftLockKeyPress
+local inputToKeyCode = F.inputToKeyCode
+local isShiftLockKeyInput = F.isShiftLockKeyInput
+local getAimReferenceUsesCenter = F.getAimReferenceUsesCenter
+local syncPcAimHoldState = F.syncPcAimHoldState
+local ensurePcAimMouseFree = F.ensurePcAimMouseFree
+local syncPcAimCursorFromSystem = F.syncPcAimCursorFromSystem
+local setHubVisible = F.setHubVisible
+local setMobileOverlayEnabled = F.setMobileOverlayEnabled
+local saveAimbotSettings = F.saveAimbotSettings
+
+local ejectScript
+
 -- Input Handling
 bindConnection(UserInputService.InputBegan:Connect(function(input, gp)
     if beginCameraDrag(input) then
@@ -6685,14 +6860,14 @@ bindConnection(UserInputService.InputBegan:Connect(function(input, gp)
     if input.UserInputType == Enum.UserInputType.Touch then
         -- Blood manip: hold finger on a player to activate
         -- (waits 0.25 s then sets holdingBloodManipKey if still held)
-        if State.bloodManipEnabled and not bloodManipTouchInput
+        if State.bloodManipEnabled and not State.bloodManipTouchInput
             and not State.freecamEnabled and not State.spectating then
             local touchPos = Vector2.new(input.Position.X, input.Position.Y)
             State.lastTouchScreenPos = touchPos
-            bloodManipTouchInput = input
+            State.bloodManipTouchInput = input
             task.spawn(function()
                 task.wait(0.25)
-                if bloodManipTouchInput == input then
+                if State.bloodManipTouchInput == input then
                     State.holdingBloodManipKey = true
                 end
             end)
@@ -6701,8 +6876,8 @@ bindConnection(UserInputService.InputBegan:Connect(function(input, gp)
         if gp then return end
 
         -- Camera orbit in freecam / spectate
-        if (State.freecamEnabled or State.spectating) and not mobileCamTouch then
-            mobileCamTouch = input
+        if (State.freecamEnabled or State.spectating) and not State.mobileCamTouch then
+            State.mobileCamTouch = input
             if State.freecamEnabled then
                 State.freecamLooking = true
                 pcall(function() UserInputService.MouseIconEnabled = false end)
@@ -6769,8 +6944,8 @@ bindConnection(UserInputService.InputEnded:Connect(function(input)
     endCameraDrag(input)
     -- End touch camera orbit / blood manip hold
     if input.UserInputType == Enum.UserInputType.Touch then
-        if input == mobileCamTouch then
-            mobileCamTouch = nil
+        if input == State.mobileCamTouch then
+            State.mobileCamTouch = nil
             if State.freecamEnabled then
                 State.freecamLooking = false
                 pcall(function() UserInputService.MouseIconEnabled = true end)
@@ -6779,8 +6954,8 @@ bindConnection(UserInputService.InputEnded:Connect(function(input)
                 State.spectateOrbiting = false
             end
         end
-        if input == bloodManipTouchInput then
-            bloodManipTouchInput = nil
+        if input == State.bloodManipTouchInput then
+            State.bloodManipTouchInput = nil
             State.holdingBloodManipKey = false
         end
     end
@@ -6811,7 +6986,7 @@ bindConnection(UserInputService.InputChanged:Connect(function(input, gp)
     if input.UserInputType == Enum.UserInputType.Touch then
         -- Track last touch position for blood manip targeting
         State.lastTouchScreenPos = Vector2.new(input.Position.X, input.Position.Y)
-        if input == mobileCamTouch then
+        if input == State.mobileCamTouch then
             local delta = Vector2.new(input.Delta.X, input.Delta.Y)
             if delta.Magnitude > 0 then
                 applyCameraDragDelta(delta)
@@ -6917,7 +7092,7 @@ end))
 pcall(function() RunService:UnbindFromRenderStep("NightFallAimbot") end)
 pcall(function() RunService:UnbindFromRenderStep("NightFallAimbotFree") end)
 
-local function runAimbotStep(dt)
+NF.F.runAimbotStep = function(dt)
     if State.ejected or not State.aimbotEnabled then
         if not State.aimbotEnabled then restoreAimbotCamera() end
         return
@@ -6944,7 +7119,7 @@ end
 pcall(function()
     RunService:BindToRenderStep("NightFallAimbot", Enum.RenderPriority.First.Value, function(dt)
         if State.isMobile or not isPcShiftLocked() then return end
-        runAimbotStep(dt)
+        NF.F.runAimbotStep(dt)
     end)
 end)
 
@@ -6953,7 +7128,7 @@ bindConnection(RunService.RenderStepped:Connect(function(dt)
         refreshShiftLockState()
     end
     if not State.isMobile and isPcShiftLocked() then return end
-    runAimbotStep(dt)
+    NF.F.runAimbotStep(dt)
 end))
 
 bindConnection(RunService.Heartbeat:Connect(function()
@@ -7398,7 +7573,7 @@ if type(NF.F.updateMovementHacks) ~= "function" or type(NF.F.updateTempVESP) ~= 
     warn("[NightFall] Feature bundle incomplete - movement/scanner may not work. Re-download the latest build.")
 end
 
-end -- scope block 2d (aimbot + wiring)
+end -- scope block 2e (input + loops + wiring)
 
 print("[NightFall] TEST build loaded - 2026-05-27-MOBILE-MOVE-FIX6-dev")
 print("[NightFall] Aimbot: Combat tab - PC hold RMB - Mobile tap LOCK ON")
