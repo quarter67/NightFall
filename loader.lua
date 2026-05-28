@@ -18,7 +18,7 @@ local CONFIG = {
     MAX_ATTEMPTS = 5,
 }
 
-local LOADER_VERSION = "4.1-keyless"
+local LOADER_VERSION = "4.1.1-keyless"
 print("[NightFall] Loader v" .. LOADER_VERSION)
 
 local COLORS = {
@@ -674,7 +674,7 @@ local function createKeyUI()
     protectGui(gui)
 
     local root = Instance.new("Frame")
-    root.Size = IS_MOBILE and UDim2.new(0.92, 0, 0, 320) or UDim2.new(0, 420, 0, 300)
+    root.Size = IS_MOBILE and UDim2.new(0.92, 0, 0, 340) or UDim2.new(0, 420, 0, 320)
     root.AnchorPoint = Vector2.new(0.5, 0.5)
     root.Position = UDim2.fromScale(0.5, 0.5)
     root.BackgroundColor3 = COLORS.bg
@@ -771,8 +771,8 @@ local function createKeyUI()
     corner(submitBtn, 10)
 
     local hint = Instance.new("TextLabel")
-    hint.Size = UDim2.new(1, -32, 0, 40)
-    hint.Position = UDim2.new(0, 16, 0, 200)
+    hint.Size = UDim2.new(1, -32, 0, 36)
+    hint.Position = UDim2.new(0, 16, 0, 198)
     hint.BackgroundTransparency = 1
     hint.Text = "Complete ad steps on the website. Key saves locally after login."
     hint.Font = FONT_BODY
@@ -784,15 +784,15 @@ local function createKeyUI()
 
     local keylessBtn = Instance.new("TextButton")
     keylessBtn.AnchorPoint = Vector2.new(0, 1)
-    keylessBtn.Size = UDim2.new(0, IS_MOBILE and 240 or 260, 0, 38)
-    keylessBtn.Position = UDim2.new(0, 16, 1, -16)
+    keylessBtn.Size = UDim2.new(0.62, 0, 0, 34)
+    keylessBtn.Position = UDim2.new(0, 16, 1, -14)
     keylessBtn.BackgroundColor3 = COLORS.surface
     keylessBtn.Text = "Continue with keyless version"
     keylessBtn.TextColor3 = COLORS.textMuted
     keylessBtn.Font = FONT_BUTTON
-    keylessBtn.TextSize = IS_MOBILE and 14 or 12
+    keylessBtn.TextSize = IS_MOBILE and 13 or 11
     keylessBtn.AutoButtonColor = false
-    keylessBtn.Parent = gui
+    keylessBtn.Parent = root
     corner(keylessBtn, 10)
     stroke(keylessBtn)
 
