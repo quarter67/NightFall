@@ -16,12 +16,15 @@ local CONFIG = {
 
     KEY_CACHE_PATH = "ScriptHub/nightfall_key.txt",
     MAX_ATTEMPTS = 5,
-    DOWNLOAD_TIMEOUT = 45,
-    KEYLESS_FALLBACK_URL = "https://raw.githubusercontent.com/quarter67/NightFall/main/script/improved_script.lua",
+    DOWNLOAD_TIMEOUT = 15,
+    KEYLESS_FALLBACK_URLS = {
+        "https://raw.githubusercontent.com/quarter67/NightFall/main/script/improved_script.lua",
+        "https://raw.githubusercontent.com/quarter67/NightFall/main/improved_script.lua",
+    },
 }
 
-local LOADER_VERSION = "4.1.6-keyless"
-local LOADER_BUILD = "2026-05-27-keyless-download-fix"
+local LOADER_VERSION = "4.1.7-keyless"
+local LOADER_BUILD = "2026-05-27-keyless-fast-download"
 print("[NightFall] Loader v" .. LOADER_VERSION .. " (" .. LOADER_BUILD .. ")")
 
 local COLORS = {
@@ -53,7 +56,22 @@ end
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
-local IS_MOBILE = UserInputService.TouchEnabled
+
+local function detectMobileDevice()
+    if UserInputService.TouchEnabled then return true end
+    if UserInputService.GyroscopeEnabled then return true end
+    if UserInputService.AccelerometerEnabled then return true end
+    local cam = workspace.CurrentCamera
+    if cam then
+        local vp = cam.ViewportSize
+        if vp.X > 0 and vp.Y > vp.X and vp.X < 980 then
+            return true
+        end
+    end
+    return false
+end
+
+local IS_MOBILE = detectMobileDevice()
 
 local FONT_TITLE = IS_MOBILE and Enum.Font.SourceSansBold or Enum.Font.GothamBold
 local FONT_BODY = IS_MOBILE and Enum.Font.SourceSans or Enum.Font.GothamMedium
@@ -723,7 +741,7 @@ local function runAsync(action, timeoutSec)
         finished = true
     end)
 
-    local deadline = os.clock() + (timeoutSec or CONFIG.DOWNLOAD_TIMEOUT or 45)
+    local deadline = os.clock() + (timeoutSec or CONFIG.DOWNLOAD_TIMEOUT or 15)
     while not finished and os.clock() < deadline do
         enableRobloxMovement()
         task.wait(0.15)
@@ -735,14 +753,70 @@ local function runAsync(action, timeoutSec)
     return out[1], out[2]
 end
 
-local function showDownloadStatus(message)
+local function fastHttpGet(url, timeoutSec)
+    timeoutSec = timeoutSec or CONFIG.DOWNLOAD_TIMEOUT or 15
+    return runAsync(function()
+        if EXECUTOR_REQUEST then
+            local ok, response = pcall(function()
+                return EXECUTOR_REQUEST({
+                    Url = url,
+                    Method = "GET",
+                    Headers = mergeHeaders({ ["Accept"] = "text/plain, application/json, */*" }),
+                })
+            end)
+            if ok then
+                local body = extractResponseBody(response)
+                if body and body ~= "" then
+                    return body, nil
+                end
+            end
+        end
+
+        local ok, body = pcall(function()
+            return HttpService:GetAsync(url, true, mergeHeaders({ ["Accept"] = "text/plain, */*" }))
+        end)
+        if ok and body and body ~= "" then
+            return body, nil
+        end
+
+        ok, body = pcall(function()
+            return game:HttpGet(url, true)
+        end)
+        if ok and body and body ~= "" then
+            return body, nil
+        end
+
+        return nil, "HTTP request failed — enable HTTP requests in executor settings"
+    end, timeoutSec)
+end
+
+local function showDownloadStatus(message, statusLabel)
     message = message or "Downloading..."
-    if IS_MOBILE then
-        print("[NightFall] " .. message)
-        enableRobloxMovement()
-        return
+    print("[NightFall] " .. message)
+    enableRobloxMovement()
+    if statusLabel and statusLabel.Parent then
+        statusLabel.Text = message
     end
-    showLoadingOverlay(message)
+end
+
+local function destroyKeyUi()
+    local parents = {}
+    local plr = Players.LocalPlayer
+    if plr then
+        local pg = plr:FindFirstChild("PlayerGui")
+        if pg then table.insert(parents, pg) end
+    end
+    table.insert(parents, game:GetService("CoreGui"))
+    if typeof(gethui) == "function" then
+        local ok, hui = pcall(gethui)
+        if ok and hui then table.insert(parents, hui) end
+    end
+    for _, parent in ipairs(parents) do
+        local gui = parent:FindFirstChild("NightFallKeyUI")
+        if gui then
+            pcall(function() gui:Destroy() end)
+        end
+    end
 end
 
 local function finishLoaderCleanup()
@@ -784,54 +858,34 @@ local function parseDownloadSource(source)
 end
 
 local function downloadScriptKeyless()
-    local function tryServer()
-        local source, dlErr = httpRequestRaw(
-            API_BASE_URL .. "/api/script-keyless?t=" .. tostring(os.time()),
-            "GET",
-            nil,
-            { ["Accept"] = "text/plain, application/json, */*" }
-        )
-        if not source then
-            source, dlErr = httpRequestRaw(
-                API_BASE_URL .. "/api/script-keyless",
-                "GET",
-                nil,
-                { ["Accept"] = "text/plain, application/json, */*" }
-            )
+    local attempts = {
+        {
+            name = "key server",
+            url = API_BASE_URL .. "/api/script-keyless?t=" .. tostring(os.time()),
+        },
+    }
+
+    for _, fallbackUrl in ipairs(CONFIG.KEYLESS_FALLBACK_URLS or {}) do
+        table.insert(attempts, {
+            name = "GitHub",
+            url = fallbackUrl .. "?t=" .. tostring(os.time()),
+        })
+    end
+
+    local lastErr = "No download sources configured"
+    for _, attempt in ipairs(attempts) do
+        print("[NightFall] Trying " .. attempt.name .. "...")
+        local raw, err = fastHttpGet(attempt.url, CONFIG.DOWNLOAD_TIMEOUT)
+        local source, parseErr = parseDownloadSource(raw)
+        if source then
+            print("[NightFall] Downloaded keyless script from " .. attempt.name .. ".")
+            return source, nil
         end
-        if not source then
-            return nil, dlErr or "Key server unreachable"
-        end
-        return parseDownloadSource(source)
+        lastErr = parseErr or err or ("Failed via " .. attempt.name)
+        warn("[NightFall] " .. attempt.name .. " failed: " .. tostring(lastErr))
     end
 
-    local source, err = runAsync(tryServer, CONFIG.DOWNLOAD_TIMEOUT)
-    if source then
-        print("[NightFall] Downloaded keyless script from key server.")
-        return source, nil
-    end
-
-    warn("[NightFall] Key server failed: " .. tostring(err) .. " — trying GitHub fallback...")
-    local function tryGitHub()
-        local url = string.format(
-            "%s?t=%s",
-            CONFIG.KEYLESS_FALLBACK_URL,
-            tostring(os.time())
-        )
-        local raw, dlErr = httpRequestRaw(url, "GET", nil, { ["Accept"] = "text/plain, */*" })
-        if not raw then
-            return nil, dlErr or "GitHub fallback failed"
-        end
-        return parseDownloadSource(raw)
-    end
-
-    source, err = runAsync(tryGitHub, CONFIG.DOWNLOAD_TIMEOUT)
-    if source then
-        print("[NightFall] Downloaded keyless script from GitHub fallback.")
-        return source, nil
-    end
-
-    return nil, err or "Failed to download keyless script."
+    return nil, lastErr
 end
 
 local KEYLESS_SENTINEL = "__NF_KEYLESS__"
@@ -871,18 +925,10 @@ local function createKeyUI()
     gui.Name = "NightFallKeyUI"
     gui.ResetOnSpawn = false
     gui.IgnoreGuiInset = true
-    gui.ZIndexBehavior = Enum.ZIndexBehavior.Global
+    gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
     gui.DisplayOrder = 999999
     gui.Parent = getGuiParent()
     protectGui(gui)
-
-    local keyBackdrop = Instance.new("Frame")
-    keyBackdrop.Name = "Backdrop"
-    keyBackdrop.Size = UDim2.fromScale(1, 1)
-    keyBackdrop.BackgroundTransparency = 1
-    keyBackdrop.BorderSizePixel = 0
-    keyBackdrop.Active = false
-    keyBackdrop.Parent = gui
 
     local root = Instance.new("Frame")
     root.Size = IS_MOBILE and UDim2.new(0.92, 0, 0, 360) or UDim2.new(0, 420, 0, 360)
@@ -891,7 +937,8 @@ local function createKeyUI()
     root.Position = UDim2.fromScale(0.5, 0.5)
     root.BackgroundColor3 = COLORS.bg
     root.BorderSizePixel = 0
-    root.Parent = keyBackdrop
+    root.Active = false
+    root.Parent = gui
     corner(root, 20)
     stroke(root)
 
@@ -1128,13 +1175,12 @@ local function createKeyUI()
         keylessBtn.Active = false
         task.spawn(function()
             startMovementKeeper()
-            showDownloadStatus("Downloading keyless NightFall...")
+            showDownloadStatus("Downloading keyless NightFall...", status)
             local source, dlErr = downloadScriptKeyless()
-            finishLoaderCleanup()
             if source then
-                pcall(function() gui:Destroy() end)
                 keyReady:Fire(KEYLESS_SENTINEL, source)
             else
+                finishLoaderCleanup()
                 done = false
                 setStatus("Download failed — tap keyless to retry", COLORS.danger)
                 keylessBtn.Text = "Continue with keyless version"
@@ -1208,10 +1254,12 @@ local function runDownloadedSource(downloadedSource, keylessMode)
     end
 
     local ok, runErr = pcall(runScript)
-    finishLoaderCleanup()
-    if not ok then
+    if ok then
+        destroyKeyUi()
+    else
         warn("[NightFall] Script error: " .. tostring(runErr))
     end
+    finishLoaderCleanup()
 end
 
 -- Startup (all functions must be defined above this line)
@@ -1260,12 +1308,16 @@ if isKeyless then
 end
 
 print("[NightFall] Premium key accepted.")
-showDownloadStatus("Downloading NightFall...")
+showDownloadStatus("Downloading NightFall...", nil)
 startMovementKeeper()
 
 local downloadedSource, downloadError = runAsync(function()
-    return downloadScript(keyResult)
-end, CONFIG.DOWNLOAD_TIMEOUT)
+    local url = API_BASE_URL .. "/api/script?key=" .. HttpService:UrlEncode(keyResult)
+        .. "&hwid=" .. HttpService:UrlEncode(HWID) .. "&t=" .. tostring(os.time())
+    local raw, err = fastHttpGet(url, CONFIG.DOWNLOAD_TIMEOUT)
+    if not raw then return nil, err end
+    return parseDownloadSource(raw)
+end, CONFIG.DOWNLOAD_TIMEOUT * 2)
 finishLoaderCleanup()
 
 if not downloadedSource then
