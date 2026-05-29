@@ -1,4 +1,4 @@
--- BUILD: 2026-05-27-CAM-DRAG-FIX18-dev
+-- BUILD: 2026-05-27-CAM-DRAG-FIX19-dev
 -- NightFall TEST BUILD (no key system)
 
 local NF = { State = {}, UI = {}, F = {}, COLORS = {}, CONST = {} }
@@ -239,19 +239,23 @@ local function refreshShiftLockState()
         State.shiftLockActive = false
         return
     end
-    if State.shiftLockSuppressed then
+    if State.shiftLockSuppressed or State.shiftLockAutoSynced then
         return
     end
-    -- Sync ON if already shift locked before the script loaded (e.g. Rivals Alt lock).
+    -- One-time sync if already shift locked before the script loaded (e.g. Rivals Alt lock).
     if detectGameShiftLock() then
         State.shiftLockActive = true
     end
+    State.shiftLockAutoSynced = true
 end
 
 local function handleShiftLockKeyPress()
     State.shiftLockActive = not State.shiftLockActive
     if State.shiftLockActive then
         State.shiftLockSuppressed = false
+        if NF.F.endPcGameplayCameraDrag then
+            pcall(NF.F.endPcGameplayCameraDrag)
+        end
         setAimbotShiftCursorLocked(true)
     else
         State.shiftLockSuppressed = true
@@ -303,6 +307,7 @@ end
 
 local function ensurePcAimMouseFree()
     if State.isMobile or isPcShiftLocked() or isRobloxCameraDragging() then return end
+    if State.pcGameplayCamDrag or State.nfOwnsCameraDragLock then return end
     pcall(function()
         if UserInputService.MouseBehavior ~= Enum.MouseBehavior.LockCurrentPosition then
             UserInputService.MouseBehavior = Enum.MouseBehavior.Default
@@ -348,11 +353,11 @@ end
 
 local function maintainPcShiftLockCursor()
     if State.isMobile or State.ejected then return end
+    if State.pcGameplayCamDrag or State.nfOwnsCameraDragLock then return end
     if State.freecamEnabled or State.spectating then
         releaseScriptShiftLockCursor()
         return
     end
-    -- Roblox uses LockCurrentPosition while holding the camera drag button ù never override that.
     if isRobloxCameraDragging() then
         return
     end
@@ -405,6 +410,10 @@ State.mobileAimCamHeight = nil
 State.shiftLockActive = false
 State.shiftLockSuppressed = false
 State.nfOwnsShiftLockCursor = false
+State.shiftLockAutoSynced = false
+State.pcGameplayCamDrag = false
+State.pcGameplayCamDragBtn = nil
+State.nfOwnsCameraDragLock = false
 State.mobileAimDragUnlocked = false
 State.trackedConnections = {}
 State.hubSliderDrag = nil
@@ -2418,6 +2427,7 @@ NF.F.restoreAimbotCamera = restoreAimbotCamera
 NF.F.cameraNeedsAimbotRestore = cameraNeedsAimbotRestore
 NF.F.ensureGameplayCamera = ensureGameplayCamera
 NF.F.isAimHoldActive = isAimHoldActive
+NF.F.getAimHoldButton = getAimHoldButton
 NF.F.isPcShiftLocked = isPcShiftLocked
 NF.F.refreshShiftLockState = refreshShiftLockState
 NF.F.handleShiftLockKeyPress = handleShiftLockKeyPress
@@ -6123,9 +6133,189 @@ local function updateFreecam(dt)
     cam.CFrame = cf
 end
 
+local function getAimHoldButtonLocal()
+    if NF.F.getAimHoldButton then
+        return NF.F.getAimHoldButton()
+    end
+    return State.swappedMouseButtons and Enum.UserInputType.MouseButton1
+        or Enum.UserInputType.MouseButton2
+end
+
+local function isPointerOverNightFallGui()
+    local ok, loc = pcall(function() return UserInputService:GetMouseLocation() end)
+    if not ok or not loc then return false end
+
+    local roots = {}
+    if UI.ScreenGui and UI.ScreenGui.Parent and UI.ScreenGui.Enabled then
+        table.insert(roots, UI.ScreenGui)
+    end
+    if UI.ToggleGui and UI.ToggleGui.Parent and UI.ToggleGui.Enabled then
+        table.insert(roots, UI.ToggleGui)
+    end
+    if UI.MobileAimGui and UI.MobileAimGui.Parent and UI.MobileAimGui.Enabled then
+        table.insert(roots, UI.MobileAimGui)
+    end
+
+    local objects = {}
+    pcall(function()
+        objects = player.PlayerGui:GetGuiObjectsAtPosition(loc.X, loc.Y)
+    end)
+    for _, obj in ipairs(objects) do
+        for _, root in ipairs(roots) do
+            if obj:IsDescendantOf(root) and obj:IsA("GuiObject") and obj.Visible and obj.Active then
+                return true
+            end
+        end
+    end
+    return false
+end
+
+local function isPcGameplayCameraButton(inputType)
+    if inputType ~= Enum.UserInputType.MouseButton1
+        and inputType ~= Enum.UserInputType.MouseButton2 then
+        return false
+    end
+    local aimBtn = getAimHoldButtonLocal()
+    if State.aimbotEnabled and inputType == aimBtn then
+        return false
+    end
+    if State.aimbotEnabled then
+        return inputType ~= aimBtn
+    end
+    -- Aimbot off: LMB for RMB-primary players, RMB for default Roblox camera.
+    if inputType == Enum.UserInputType.MouseButton1 then
+        return true
+    end
+    return inputType == Enum.UserInputType.MouseButton2 and not State.swappedMouseButtons
+end
+
+local function syncPcGameplayCamAnglesFromCamera()
+    local cam = Workspace.CurrentCamera
+    local hrp = getRoot()
+    if not cam or not hrp then return end
+    local focus = hrp.Position + Vector3.new(0, 1.5, 0)
+    local offset = cam.CFrame.Position - focus
+    local dist = offset.Magnitude
+    if dist < 0.5 then dist = 12 end
+    local flat = Vector3.new(offset.X, 0, offset.Z)
+    local yaw = math.atan2(-flat.X, -flat.Z)
+    local pitch = math.asin(math.clamp(offset.Y / dist, -1, 1))
+    State.pcGameplayCamYaw = yaw
+    State.pcGameplayCamPitch = pitch
+    State.pcGameplayCamDist = dist
+end
+
+local function applyPcGameplayCameraDrag(delta)
+    if not State.pcGameplayCamDrag or delta.Magnitude <= 0 then return end
+    local cam = Workspace.CurrentCamera
+    local hrp = getRoot()
+    local hum = getHumanoid()
+    if not cam or not hrp or not hum then return end
+
+    pcall(function()
+        if cam.CameraType ~= Enum.CameraType.Custom then
+            cam.CameraType = Enum.CameraType.Custom
+        end
+        if cam.CameraSubject ~= hum then
+            cam.CameraSubject = hum
+        end
+    end)
+
+    local sens = 0.003
+    pcall(function()
+        local ug = UserSettings():GetService("UserGameSettings")
+        if ug and ug.MouseDeltaSensitivity then
+            sens = ug.MouseDeltaSensitivity * 0.0025
+        end
+    end)
+
+    State.pcGameplayCamYaw = (State.pcGameplayCamYaw or 0) - delta.X * sens
+    State.pcGameplayCamPitch = math.clamp(
+        (State.pcGameplayCamPitch or 0) - delta.Y * sens,
+        -1.2,
+        1.2
+    )
+    State.pcGameplayCamDist = State.pcGameplayCamDist or (cam.CFrame.Position - hrp.Position).Magnitude
+    if State.pcGameplayCamDist < 2 then
+        State.pcGameplayCamDist = 12
+    end
+
+    local focus = hrp.Position + Vector3.new(0, 1.5, 0)
+    local look = CFrame.fromEulerAnglesYXZ(
+        State.pcGameplayCamPitch,
+        State.pcGameplayCamYaw,
+        0
+    ).LookVector
+    local camPos = focus - look * State.pcGameplayCamDist
+    pcall(function()
+        cam.CFrame = CFrame.new(camPos, focus)
+    end)
+end
+
+local function endPcGameplayCameraDrag(input)
+    if not State.pcGameplayCamDrag then return false end
+    if input and State.pcGameplayCamDragBtn
+        and input.UserInputType ~= State.pcGameplayCamDragBtn then
+        return false
+    end
+
+    State.pcGameplayCamDrag = false
+    State.pcGameplayCamDragBtn = nil
+    State.pcGameplayCamYaw = nil
+    State.pcGameplayCamPitch = nil
+    State.pcGameplayCamDist = nil
+
+    if State.nfOwnsCameraDragLock then
+        State.nfOwnsCameraDragLock = false
+        pcall(function()
+            if not State.nfOwnsShiftLockCursor and not State.shiftLockActive then
+                UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+                UserInputService.MouseIconEnabled = true
+            end
+        end)
+    end
+    return true
+end
+
+local function beginPcGameplayCameraDrag(input, _gameProcessed)
+    if State.isMobile or State.ejected then return false end
+    if State.freecamEnabled or State.spectating or State.shiftLockActive then return false end
+    if NF.F.isPcShiftLocked and NF.F.isPcShiftLocked() then return false end
+    if State.WindowDrag and State.WindowDrag.active then return false end
+    if State.hubSliderDrag and State.hubSliderDrag.active then return false end
+    if not isPcGameplayCameraButton(input.UserInputType) then return false end
+    if isPointerOverNightFallGui() then return false end
+    if State.WindowDrag and State.WindowDrag.isOverHeader and State.WindowDrag.isOverHeader() then
+        return false
+    end
+
+    State.pcGameplayCamDrag = true
+    State.pcGameplayCamDragBtn = input.UserInputType
+    syncPcGameplayCamAnglesFromCamera()
+
+    pcall(function()
+        UserInputService.MouseBehavior = Enum.MouseBehavior.LockCurrentPosition
+        UserInputService.MouseIconEnabled = false
+    end)
+    State.nfOwnsCameraDragLock = true
+    return true
+end
+
+local function updatePcGameplayCameraDrag()
+    if not State.pcGameplayCamDrag or State.isMobile then return end
+    local btn = State.pcGameplayCamDragBtn
+    if btn and not UserInputService:IsMouseButtonPressed(btn) then
+        endPcGameplayCameraDrag(nil)
+    end
+end
+
 NF.F.beginCameraDrag = beginCameraDrag
 NF.F.endCameraDrag = endCameraDrag
 NF.F.applyCameraDragDelta = applyCameraDragDelta
+NF.F.beginPcGameplayCameraDrag = beginPcGameplayCameraDrag
+NF.F.endPcGameplayCameraDrag = endPcGameplayCameraDrag
+NF.F.applyPcGameplayCameraDrag = applyPcGameplayCameraDrag
+NF.F.updatePcGameplayCameraDrag = updatePcGameplayCameraDrag
 NF.F.updateFreecam = updateFreecam
 NF.F.stopFreecam = stopFreecam
 NF.F.setFreecam = setFreecam
@@ -7336,11 +7526,20 @@ local setHubVisible = F.setHubVisible
 local setMobileOverlayEnabled = F.setMobileOverlayEnabled
 local closeHubMenu = F.closeHubMenu
 local saveAimbotSettings = F.saveAimbotSettings
+local beginPcGameplayCameraDrag = F.beginPcGameplayCameraDrag
+local endPcGameplayCameraDrag = F.endPcGameplayCameraDrag
+local applyPcGameplayCameraDrag = F.applyPcGameplayCameraDrag
+local updatePcGameplayCameraDrag = F.updatePcGameplayCameraDrag
 
 local ejectScript
 
 -- Input Handling
 bindConnection(UserInputService.InputBegan:Connect(function(input, gp)
+    if not State.isMobile and beginPcGameplayCameraDrag
+        and beginPcGameplayCameraDrag(input, gp) then
+        return
+    end
+
     if beginCameraDrag(input) then
         return
     end
@@ -7450,6 +7649,9 @@ end))
 bindConnection(UserInputService.InputEnded:Connect(function(input)
     State.WindowDrag.stop(input)
     endCameraDrag(input)
+    if endPcGameplayCameraDrag then
+        endPcGameplayCameraDrag(input)
+    end
     -- End touch camera orbit / blood manip hold
     if input.UserInputType == Enum.UserInputType.Touch then
         if input == State.mobileCamTouch then
@@ -7505,7 +7707,12 @@ bindConnection(UserInputService.InputChanged:Connect(function(input, gp)
     end
 
     if input.UserInputType == Enum.UserInputType.MouseMovement then
-        if State.freecamLooking or State.spectateOrbiting then
+        if State.pcGameplayCamDrag and applyPcGameplayCameraDrag then
+            local delta = Vector2.new(input.Delta.X, input.Delta.Y)
+            if delta.Magnitude > 0 then
+                applyPcGameplayCameraDrag(delta)
+            end
+        elseif State.freecamLooking or State.spectateOrbiting then
             local delta = Vector2.new(input.Delta.X, input.Delta.Y)
             if delta.Magnitude > 0 then
                 applyCameraDragDelta(delta)
@@ -7657,8 +7864,10 @@ end)
 
 bindConnection(RunService.RenderStepped:Connect(function(dt)
     if not State.isMobile then
-        refreshShiftLockState()
-        if maintainPcShiftLockCursor then
+        if updatePcGameplayCameraDrag then
+            updatePcGameplayCameraDrag()
+        end
+        if State.shiftLockActive and maintainPcShiftLockCursor then
             maintainPcShiftLockCursor()
         end
         if ensurePcGameplay and (not State.lastPcGameplayEnsure or tick() - State.lastPcGameplayEnsure > 2) then
@@ -7714,6 +7923,9 @@ ejectScript = function()
     pcall(resetBloodManipState)
     pcall(stopBloodManipEffectBlock)
     pcall(clearAimbotLock)
+    if endPcGameplayCameraDrag then
+        pcall(endPcGameplayCameraDrag)
+    end
     pcall(function()
         UserInputService.MouseBehavior = Enum.MouseBehavior.Default
     end)
@@ -8011,6 +8223,7 @@ task.defer(function()
     dismissNightFallLoaderUi()
     ensureMobileGameplay()
     if ensurePcGameplay then ensurePcGameplay() end
+    if refreshShiftLockState then refreshShiftLockState() end
     if State.isMobile then
         print("[NightFall] Mobile mode - menu closed on load. Tap NF cube to open.")
         task.spawn(function()
