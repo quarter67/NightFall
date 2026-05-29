@@ -23,8 +23,8 @@ local CONFIG = {
     },
 }
 
-local LOADER_VERSION = "4.1.7-keyless"
-local LOADER_BUILD = "2026-05-27-keyless-fast-download"
+local LOADER_VERSION = "4.1.9-delta-mobile"
+local LOADER_BUILD = "2026-05-27-delta-mobile"
 print("[NightFall] Loader v" .. LOADER_VERSION .. " (" .. LOADER_BUILD .. ")")
 
 local COLORS = {
@@ -320,17 +320,165 @@ local GuiService = game:GetService("GuiService")
 local function enableRobloxMovement()
     pcall(function() GuiService.TouchControlsEnabled = true end)
     pcall(function()
+        UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+        UserInputService.MouseIconEnabled = true
+    end)
+    if IS_MOBILE then
+        pcall(function()
+            local plr = Players.LocalPlayer
+            local char = plr and plr.Character
+            local hum = char and char:FindFirstChildOfClass("Humanoid")
+            if hum then
+                hum.PlatformStand = false
+                hum.AutoRotate = true
+                hum.Sit = false
+                if hum.WalkSpeed <= 0 then
+                    hum.WalkSpeed = 16
+                end
+            end
+            local hrp = char and char:FindFirstChild("HumanoidRootPart")
+            if hrp then
+                hrp.Anchored = false
+            end
+        end)
+        return
+    end
+    pcall(function()
         local plr = Players.LocalPlayer
         if not plr then return end
         local ps = plr:FindFirstChild("PlayerScripts")
         if not ps then return end
         local pm = ps:FindFirstChild("PlayerModule")
         if not pm then return end
-        local controls = require(pm):GetControls()
+        local ok, playerModule = pcall(require, pm)
+        if not ok or not playerModule then return end
+        local controls = playerModule:GetControls()
         if controls and controls.Enable then
             controls:Enable(true)
         end
     end)
+end
+
+local function getGuiSearchRoots()
+    local roots = {}
+    local plr = Players.LocalPlayer
+    if plr then
+        local pg = plr:FindFirstChild("PlayerGui")
+        if pg then table.insert(roots, pg) end
+    end
+    if typeof(gethui) == "function" then
+        local ok, hui = pcall(gethui)
+        if ok and hui then table.insert(roots, hui) end
+    end
+    table.insert(roots, game:GetService("CoreGui"))
+    return roots
+end
+
+local function nightFallUiExists()
+    for _, root in ipairs(getGuiSearchRoots()) do
+        if root:FindFirstChild("ScriptHubToggle") or root:FindFirstChild("ScriptHub") then
+            return true
+        end
+    end
+    return false
+end
+
+local function waitForNightFallUi(timeoutSec)
+    local deadline = os.clock() + (timeoutSec or 12)
+    while os.clock() < deadline do
+        if nightFallUiExists() then
+            return true
+        end
+        enableRobloxMovement()
+        task.wait(0.2)
+    end
+    return false
+end
+
+local function getExecutorEnv()
+    if typeof(getgenv) == "function" then
+        local ok, env = pcall(getgenv)
+        if ok and type(env) == "table" then
+            return env
+        end
+    end
+    if typeof(shared) == "table" then
+        return shared
+    end
+    return _G
+end
+
+local function patchKeylessSource(source)
+    source = source:gsub(
+        "local isPremium, allowRun = resolveScriptAccess%(%)",
+        "local isPremium, allowRun = false, true",
+        1
+    )
+    return source
+end
+
+local function patchPremiumSource(source, scriptKey)
+    if type(scriptKey) ~= "string" or scriptKey == "" then
+        return source
+    end
+
+    local keyLit = HttpService:JSONEncode(scriptKey)
+    source = source:gsub(
+        "local isPremium, allowRun = resolveScriptAccess%(%)",
+        "local isPremium, allowRun = true, true",
+        1
+    )
+
+    return table.concat({
+        "_G.SCRIPT_KEY = " .. keyLit,
+        "shared.SCRIPT_KEY = " .. keyLit,
+        "_G.NF_KEYLESS = false",
+        "shared.NF_KEYLESS = false",
+        "pcall(function()",
+        "  if typeof(getgenv) == 'function' then",
+        "    local g = getgenv()",
+        "    g.SCRIPT_KEY = " .. keyLit,
+        "    g.NF_KEYLESS = false",
+        "  end",
+        "end)",
+        source,
+    }, "\n")
+end
+
+local function compileNightFallSource(source, chunkName)
+    chunkName = chunkName or "NightFall"
+    local env = getExecutorEnv()
+
+    if type(load) == "function" then
+        local fn, err = load(source, chunkName, "t", env)
+        if type(fn) == "function" then
+            return fn, nil
+        end
+        if err then
+            warn("[NightFall] load() compile failed: " .. tostring(err))
+        end
+    end
+
+    local compile = loadstring
+    if type(compile) ~= "function" and env then
+        compile = env.loadstring or env.load
+    end
+    if type(compile) ~= "function" then
+        return nil, "No loadstring/load available"
+    end
+
+    local fn, err = compile(source, chunkName)
+    if type(fn) ~= "function" then
+        return nil, err or fn
+    end
+
+    pcall(function()
+        if setfenv then
+            setfenv(fn, env)
+        end
+    end)
+
+    return fn, nil
 end
 
 local function destroyStaleLoaderUi()
@@ -890,8 +1038,18 @@ end
 
 local KEYLESS_SENTINEL = "__NF_KEYLESS__"
 
+local function bindUiButton(btn, handler)
+    if IS_MOBILE then
+        btn.Activated:Connect(handler)
+    else
+        btn.MouseButton1Click:Connect(handler)
+    end
+end
+
 local function createKeyUI()
     hideLoadingOverlay()
+    startMovementKeeper()
+    enableRobloxMovement()
 
     local TweenService = game:GetService("TweenService")
     local keyReady = Instance.new("BindableEvent")
@@ -931,10 +1089,17 @@ local function createKeyUI()
     protectGui(gui)
 
     local root = Instance.new("Frame")
-    root.Size = IS_MOBILE and UDim2.new(0.92, 0, 0, 360) or UDim2.new(0, 420, 0, 360)
+    if IS_MOBILE then
+        -- Top sheet: leave bottom of screen free for Delta thumbstick / jump.
+        root.AnchorPoint = Vector2.new(0.5, 0)
+        root.Position = UDim2.new(0.5, 0, 0, 8)
+        root.Size = UDim2.new(0.94, 0, 0, 330)
+    else
+        root.Size = UDim2.new(0, 420, 0, 360)
+        root.AnchorPoint = Vector2.new(0.5, 0.5)
+        root.Position = UDim2.fromScale(0.5, 0.5)
+    end
     root.ClipsDescendants = false
-    root.AnchorPoint = Vector2.new(0.5, 0.5)
-    root.Position = UDim2.fromScale(0.5, 0.5)
     root.BackgroundColor3 = COLORS.bg
     root.BorderSizePixel = 0
     root.Active = false
@@ -1100,7 +1265,7 @@ local function createKeyUI()
         status.TextColor3 = color or COLORS.textMuted
     end
 
-    getKeyBtn.MouseButton1Click:Connect(function()
+    local function openGetKeyLink()
         setStatus("Creating key link...", COLORS.textMuted)
 
         task.spawn(function()
@@ -1118,7 +1283,9 @@ local function createKeyUI()
                 warn("[NightFall] get-link failed:", tostring(err))
             end
         end)
-    end)
+    end
+
+    bindUiButton(getKeyBtn, openGetKeyLink)
 
     local function trySubmit()
         if done then return end
@@ -1145,14 +1312,17 @@ local function createKeyUI()
             if valid then
                 resolvedKey = keyOrErr
                 fsWrite(CONFIG.KEY_CACHE_PATH, resolvedKey)
-                getgenv().SCRIPT_KEY = resolvedKey
+                setLoaderFlags(false, resolvedKey)
                 setStatus("Key accepted. Loading NightFall...", COLORS.success)
                 submitBtn.Text = "Success"
                 done = true
-                task.delay(0.35, function()
-                    gui:Destroy()
-                    keyReady:Fire(resolvedKey)
-                end)
+                box.TextEditable = false
+                submitBtn.Active = false
+                getKeyBtn.Active = false
+                keylessBtn.Active = false
+                startMovementKeeper()
+                enableRobloxMovement()
+                keyReady:Fire(resolvedKey)
                 return
             end
 
@@ -1161,7 +1331,7 @@ local function createKeyUI()
         end)
     end
 
-    submitBtn.MouseButton1Click:Connect(trySubmit)
+    bindUiButton(submitBtn, trySubmit)
 
     local function onKeylessChosen()
         if done then return end
@@ -1192,10 +1362,15 @@ local function createKeyUI()
         end)
     end
 
+    bindUiButton(keylessBtn, onKeylessChosen)
+
     if IS_MOBILE then
-        keylessBtn.Activated:Connect(onKeylessChosen)
-    else
-        keylessBtn.MouseButton1Click:Connect(onKeylessChosen)
+        task.spawn(function()
+            while gui and gui.Parent do
+                enableRobloxMovement()
+                task.wait(0.35)
+            end
+        end)
     end
 
     return keyReady.Event:Wait()
@@ -1207,66 +1382,64 @@ local function acquireKey()
     return createKeyUI()
 end
 
-local function runDownloadedSource(downloadedSource, keylessMode)
-    finishLoaderCleanup()
+local function runDownloadedSource(downloadedSource, keylessMode, scriptKey)
     startMovementKeeper()
     enableRobloxMovement()
 
     if keylessMode then
+        setLoaderFlags(true, nil)
         downloadedSource = table.concat({
-            "pcall(function()",
-            "  if typeof(getgenv) == 'function' then getgenv().NF_KEYLESS = true end",
-            "  _G.NF_KEYLESS = true",
-            "  if typeof(shared) == 'table' then shared.NF_KEYLESS = true end",
-            "end)",
-            downloadedSource,
+            "_G.NF_KEYLESS = true",
+            "shared.NF_KEYLESS = true",
+            "pcall(function() if typeof(getgenv) == 'function' then getgenv().NF_KEYLESS = true end end)",
+            patchKeylessSource(downloadedSource),
         }, "\n")
+    else
+        setLoaderFlags(false, scriptKey)
+        downloadedSource = patchPremiumSource(downloadedSource, scriptKey)
     end
 
-    local function getCompileFn()
-        if type(loadstring) == "function" then return loadstring end
-        if type(load) == "function" then return load end
-        if getgenv then
-            local env = getgenv()
-            if env and type(env.loadstring) == "function" then return env.loadstring end
-            if env and type(env.load) == "function" then return env.load end
-        end
-        if getrenv then
-            local env = getrenv()
-            if env and type(env.loadstring) == "function" then return env.loadstring end
-            if env and type(env.load) == "function" then return env.load end
-        end
-        return nil
-    end
-
-    local compile = getCompileFn()
-    if type(compile) ~= "function" then
-        finishLoaderCleanup()
-        warn("[NightFall] Your executor does not support loadstring/load — cannot run the script.")
-        return
-    end
-
-    local runScript, compileErr = compile(downloadedSource, "NightFall")
+    local runScript, compileErr = compileNightFallSource(downloadedSource, "NightFall")
     if type(runScript) ~= "function" then
         finishLoaderCleanup()
         warn("[NightFall] Failed to compile script: " .. tostring(compileErr or runScript))
-        return
+        return false
     end
 
     local ok, runErr = pcall(runScript)
-    if ok then
-        destroyKeyUi()
-    else
+    if not ok then
+        finishLoaderCleanup()
         warn("[NightFall] Script error: " .. tostring(runErr))
+        return false
     end
+
+    local loaded = waitForNightFallUi(12)
     finishLoaderCleanup()
+
+    if loaded then
+        destroyKeyUi()
+        print("[NightFall] NightFall UI detected — ready.")
+        return true
+    end
+
+    warn("[NightFall] Script ran but NightFall UI did not appear (Delta/mobile env). Re-open loader and retry.")
+    enableRobloxMovement()
+    return false
 end
 
 -- Startup (all functions must be defined above this line)
 destroyStaleLoaderUi()
 waitForLocalPlayer()
+if not game:IsLoaded() then
+    game.Loaded:Wait()
+end
+local plr = Players.LocalPlayer
+if plr and not plr.Character then
+    plr.CharacterAdded:Wait()
+end
 if IS_MOBILE then
     enableRobloxMovement()
+    startMovementKeeper()
 end
 
 if not API_BASE_URL or not isValidApiUrl(API_BASE_URL) then
@@ -1308,8 +1481,13 @@ if isKeyless then
 end
 
 print("[NightFall] Premium key accepted.")
-showDownloadStatus("Downloading NightFall...", nil)
 startMovementKeeper()
+enableRobloxMovement()
+if IS_MOBILE then
+    showLoadingOverlay("Downloading NightFall...")
+else
+    showDownloadStatus("Downloading NightFall...", nil)
+end
 
 local downloadedSource, downloadError = runAsync(function()
     local url = API_BASE_URL .. "/api/script?key=" .. HttpService:UrlEncode(keyResult)
@@ -1318,12 +1496,11 @@ local downloadedSource, downloadError = runAsync(function()
     if not raw then return nil, err end
     return parseDownloadSource(raw)
 end, CONFIG.DOWNLOAD_TIMEOUT * 2)
-finishLoaderCleanup()
 
 if not downloadedSource then
+    finishLoaderCleanup()
     warn("[NightFall] " .. tostring(downloadError))
     return
 end
 
-setLoaderFlags(false, keyResult)
-runDownloadedSource(downloadedSource, false)
+runDownloadedSource(downloadedSource, false, keyResult)
