@@ -1969,6 +1969,8 @@ local function createHubButton(parent, title, subtitle)
     guiPassThrough(btn)
     return btn
 end
+
+local function setHubToggle(btn, enabled, onText, offText)
     local state = btn:FindFirstChild("StateLabel")
     local track = btn:FindFirstChild("SwitchTrack")
     local knob = track and track:FindFirstChild("SwitchKnob")
