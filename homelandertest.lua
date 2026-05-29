@@ -1,4 +1,4 @@
--- BUILD: 2026-05-27-MOBILE-MOVE-FIX12-dev
+-- BUILD: 2026-05-27-SHIFTLOCK-GUI-FIX13-dev
 -- NightFall TEST BUILD (no key system)
 
 local NF = { State = {}, UI = {}, F = {}, COLORS = {}, CONST = {} }
@@ -240,6 +240,7 @@ local function handleShiftLockKeyPress()
         else
             State.shiftLockActive = detected or true
         end
+        maintainPcShiftLockCursor()
     end)
 end
 
@@ -297,7 +298,7 @@ local function setAimbotShiftCursorLocked(locked)
         if locked then
             UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
             UserInputService.MouseIconEnabled = false
-        elseif not State.freecamEnabled and not State.spectating then
+        elseif not State.freecamEnabled and not State.spectating and not isPcShiftLocked() then
             UserInputService.MouseBehavior = Enum.MouseBehavior.Default
             UserInputService.MouseIconEnabled = true
         end
@@ -306,6 +307,15 @@ local function setAimbotShiftCursorLocked(locked)
         UI.AimCursor.Visible = locked == true
         UI.AimCursor.Position = AIM_CURSOR_GUI_POS
     end
+end
+
+local function maintainPcShiftLockCursor()
+    if State.isMobile or State.ejected then return end
+    if State.freecamEnabled or State.spectating then
+        setAimbotShiftCursorLocked(false)
+        return
+    end
+    setAimbotShiftCursorLocked(isPcShiftLocked())
 end
 
 local function getShiftLockAimScreen()
@@ -2325,8 +2335,11 @@ NF.F.getAimReferenceUsesCenter = getAimReferenceUsesCenter
 NF.F.syncPcAimHoldState = syncPcAimHoldState
 NF.F.ensurePcAimMouseFree = ensurePcAimMouseFree
 NF.F.setAimbotShiftCursorLocked = setAimbotShiftCursorLocked
+NF.F.maintainPcShiftLockCursor = maintainPcShiftLockCursor
 NF.F.getShiftLockAimScreen = getShiftLockAimScreen
 NF.F.syncPcAimCursorFromSystem = syncPcAimCursorFromSystem
+NF.F.applyGuiScale = applyGuiScale
+NF.F.applyToggleCubeSize = applyToggleCubeSize
 NF.F.saveAimbotSettings = saveAimbotSettings
 NF.F.loadAimbotSettings = loadAimbotSettings
 NF.F.onHeaderDragBegan = onHeaderDragBegan
@@ -3125,7 +3138,9 @@ UI.ToggleSizeSlider, UI.setToggleSizeSliderValue = createHubSlider(
     72,
     State.toggleCubeSize,
     function(value)
-        applyToggleCubeSize(value)
+        if NF.F.applyToggleCubeSize then
+            NF.F.applyToggleCubeSize(value)
+        end
     end
 )
 
@@ -3137,7 +3152,9 @@ UI.GuiSizeSlider, UI.setGuiSizeSliderValue = createHubSlider(
     30, 130,
     math.floor(State.guiScale * 100),
     function(value)
-        applyGuiScale(value / 100)
+        if NF.F.applyGuiScale then
+            NF.F.applyGuiScale(value / 100)
+        end
     end
 )
 
@@ -6395,10 +6412,10 @@ local function resetBloodManipState()
     clearBloodManipHighlight()
 end
 
-local BLOOD_MANIP_FLEE_TIME = 2.0
-local BLOOD_MANIP_STAY_TIME = 0.85
+local BLOOD_MANIP_FLEE_TIME = 4.30
+local BLOOD_MANIP_STAY_TIME = 0.60
 local BLOOD_MANIP_FLEE_DIST = 3
-local BLOOD_MANIP_HOLD_KILL_TIME = 2.0
+local BLOOD_MANIP_HOLD_KILL_TIME = 4.30
 
 local function bloodManipTeleportHrp(hrp, cf)
     if not hrp or not cf then return end
@@ -6872,7 +6889,7 @@ local function getAimMousePos()
 end
 
 local function getViewportCenterScreen()
-    if not State.isMobile and State.aimbotEnabled and isAimHoldActive() and isPcShiftLocked() then
+    if not State.isMobile and isPcShiftLocked() then
         if NF.F.getShiftLockAimScreen then
             return NF.F.getShiftLockAimScreen()
         end
@@ -7192,6 +7209,7 @@ local getAimReferenceUsesCenter = F.getAimReferenceUsesCenter
 local syncPcAimHoldState = F.syncPcAimHoldState
 local ensurePcAimMouseFree = F.ensurePcAimMouseFree
 local setAimbotShiftCursorLocked = F.setAimbotShiftCursorLocked
+local maintainPcShiftLockCursor = F.maintainPcShiftLockCursor
 local syncPcAimCursorFromSystem = F.syncPcAimCursorFromSystem
 local setHubVisible = F.setHubVisible
 local setMobileOverlayEnabled = F.setMobileOverlayEnabled
@@ -7470,6 +7488,7 @@ pcall(function() RunService:UnbindFromRenderStep("NightFallAimbotFree") end)
 
 NF.F.runAimbotStep = function(dt)
     local function releaseShiftAimCursor()
+        if isPcShiftLocked() then return end
         if setAimbotShiftCursorLocked then
             setAimbotShiftCursorLocked(false)
         end
@@ -7495,12 +7514,6 @@ NF.F.runAimbotStep = function(dt)
         return
     end
 
-    if not State.isMobile and isPcShiftLocked() and setAimbotShiftCursorLocked then
-        setAimbotShiftCursorLocked(true)
-    elseif setAimbotShiftCursorLocked then
-        setAimbotShiftCursorLocked(false)
-    end
-
     if not refreshCamera() then return end
 
     local _, part = updateAimbotLock(getAimReferenceUsesCenter())
@@ -7519,6 +7532,9 @@ end)
 bindConnection(RunService.RenderStepped:Connect(function(dt)
     if not State.isMobile then
         refreshShiftLockState()
+        if maintainPcShiftLockCursor then
+            maintainPcShiftLockCursor()
+        end
     end
     if not State.isMobile and isPcShiftLocked() then return end
     NF.F.runAimbotStep(dt)
