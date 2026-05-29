@@ -1,4 +1,4 @@
--- BUILD: 2026-05-27-CAM-DRAG-FIX19-dev
+-- BUILD: 2026-05-27-CAM-DRAG-FIX20-dev
 -- NightFall TEST BUILD (no key system)
 
 local NF = { State = {}, UI = {}, F = {}, COLORS = {}, CONST = {} }
@@ -6171,84 +6171,40 @@ local function isPointerOverNightFallGui()
 end
 
 local function isPcGameplayCameraButton(inputType)
-    if inputType ~= Enum.UserInputType.MouseButton1
-        and inputType ~= Enum.UserInputType.MouseButton2 then
+    -- RMB-primary Roblox setup: only LMB rotates the camera.
+    if inputType ~= Enum.UserInputType.MouseButton1 then
         return false
     end
-    local aimBtn = getAimHoldButtonLocal()
-    if State.aimbotEnabled and inputType == aimBtn then
+    if State.aimbotEnabled and getAimHoldButtonLocal() == Enum.UserInputType.MouseButton1 then
         return false
     end
-    if State.aimbotEnabled then
-        return inputType ~= aimBtn
-    end
-    -- Aimbot off: LMB for RMB-primary players, RMB for default Roblox camera.
-    if inputType == Enum.UserInputType.MouseButton1 then
-        return true
-    end
-    return inputType == Enum.UserInputType.MouseButton2 and not State.swappedMouseButtons
-end
-
-local function syncPcGameplayCamAnglesFromCamera()
-    local cam = Workspace.CurrentCamera
-    local hrp = getRoot()
-    if not cam or not hrp then return end
-    local focus = hrp.Position + Vector3.new(0, 1.5, 0)
-    local offset = cam.CFrame.Position - focus
-    local dist = offset.Magnitude
-    if dist < 0.5 then dist = 12 end
-    local flat = Vector3.new(offset.X, 0, offset.Z)
-    local yaw = math.atan2(-flat.X, -flat.Z)
-    local pitch = math.asin(math.clamp(offset.Y / dist, -1, 1))
-    State.pcGameplayCamYaw = yaw
-    State.pcGameplayCamPitch = pitch
-    State.pcGameplayCamDist = dist
+    return true
 end
 
 local function applyPcGameplayCameraDrag(delta)
     if not State.pcGameplayCamDrag or delta.Magnitude <= 0 then return end
     local cam = Workspace.CurrentCamera
-    local hrp = getRoot()
-    local hum = getHumanoid()
-    if not cam or not hrp or not hum then return end
-
-    pcall(function()
-        if cam.CameraType ~= Enum.CameraType.Custom then
-            cam.CameraType = Enum.CameraType.Custom
-        end
-        if cam.CameraSubject ~= hum then
-            cam.CameraSubject = hum
-        end
-    end)
+    if not cam or cam.CameraType == Enum.CameraType.Scriptable then return end
 
     local sens = 0.003
     pcall(function()
         local ug = UserSettings():GetService("UserGameSettings")
         if ug and ug.MouseDeltaSensitivity then
-            sens = ug.MouseDeltaSensitivity * 0.0025
+            sens = math.clamp(ug.MouseDeltaSensitivity * 0.002, 0.001, 0.01)
         end
     end)
 
-    State.pcGameplayCamYaw = (State.pcGameplayCamYaw or 0) - delta.X * sens
-    State.pcGameplayCamPitch = math.clamp(
-        (State.pcGameplayCamPitch or 0) - delta.Y * sens,
-        -1.2,
-        1.2
-    )
-    State.pcGameplayCamDist = State.pcGameplayCamDist or (cam.CFrame.Position - hrp.Position).Magnitude
-    if State.pcGameplayCamDist < 2 then
-        State.pcGameplayCamDist = 12
+    local yaw = -delta.X * sens
+    local pitch = -delta.Y * sens
+    local cf = cam.CFrame
+    local rotated = cf * CFrame.Angles(pitch, yaw, 0)
+    local lookY = rotated.LookVector.Y
+    if lookY > 0.99 or lookY < -0.99 then
+        rotated = cf * CFrame.Angles(0, yaw, 0)
     end
 
-    local focus = hrp.Position + Vector3.new(0, 1.5, 0)
-    local look = CFrame.fromEulerAnglesYXZ(
-        State.pcGameplayCamPitch,
-        State.pcGameplayCamYaw,
-        0
-    ).LookVector
-    local camPos = focus - look * State.pcGameplayCamDist
     pcall(function()
-        cam.CFrame = CFrame.new(camPos, focus)
+        cam.CFrame = rotated
     end)
 end
 
@@ -6261,9 +6217,6 @@ local function endPcGameplayCameraDrag(input)
 
     State.pcGameplayCamDrag = false
     State.pcGameplayCamDragBtn = nil
-    State.pcGameplayCamYaw = nil
-    State.pcGameplayCamPitch = nil
-    State.pcGameplayCamDist = nil
 
     if State.nfOwnsCameraDragLock then
         State.nfOwnsCameraDragLock = false
@@ -6291,7 +6244,6 @@ local function beginPcGameplayCameraDrag(input, _gameProcessed)
 
     State.pcGameplayCamDrag = true
     State.pcGameplayCamDragBtn = input.UserInputType
-    syncPcGameplayCamAnglesFromCamera()
 
     pcall(function()
         UserInputService.MouseBehavior = Enum.MouseBehavior.LockCurrentPosition
