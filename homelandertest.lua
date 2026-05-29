@@ -1,4 +1,4 @@
--- BUILD: 2026-05-27-SHIFTLOCK-GUI-FIX13-dev
+-- BUILD: 2026-05-27-SHIFTLOCK-CAM-FIX14-dev
 -- NightFall TEST BUILD (no key system)
 
 local NF = { State = {}, UI = {}, F = {}, COLORS = {}, CONST = {} }
@@ -187,9 +187,7 @@ local function detectGameShiftLock()
     if State.isMobile or State.freecamEnabled or State.spectating then
         return false
     end
-    if UserInputService.MouseBehavior == Enum.MouseBehavior.LockCenter then
-        return true
-    end
+    -- Do not treat our own LockCenter as game shift lock (causes stuck cursor).
     -- Rivals: Left Alt shift lock hides the cursor and pins it to screen center.
     if UserInputService.MouseIconEnabled then
         return false
@@ -210,12 +208,16 @@ end
 local function isPcShiftLocked()
     if State.isMobile then return false end
     if State.shiftLockActive then return true end
+    if State.shiftLockSuppressed then return false end
     return detectGameShiftLock()
 end
 
 local function refreshShiftLockState()
     if State.isMobile or State.freecamEnabled or State.spectating then
         State.shiftLockActive = false
+        return
+    end
+    if State.shiftLockSuppressed then
         return
     end
     -- Sync ON if already shift locked before the script loaded (e.g. Rivals Alt lock).
@@ -225,23 +227,18 @@ local function refreshShiftLockState()
 end
 
 local function handleShiftLockKeyPress()
-    local wasActive = State.shiftLockActive
-    State.shiftLockActive = not wasActive
-    task.defer(function()
-        RunService.RenderStepped:Wait()
-        local detected = detectGameShiftLock()
-        if wasActive then
-            if not detected then
-                State.shiftLockActive = false
-            else
-                RunService.RenderStepped:Wait()
-                State.shiftLockActive = detectGameShiftLock()
-            end
-        else
-            State.shiftLockActive = detected or true
-        end
-        maintainPcShiftLockCursor()
-    end)
+    State.shiftLockActive = not State.shiftLockActive
+    if State.shiftLockActive then
+        State.shiftLockSuppressed = false
+        setAimbotShiftCursorLocked(true)
+    else
+        State.shiftLockSuppressed = true
+        setAimbotShiftCursorLocked(false)
+        pcall(function()
+            UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+            UserInputService.MouseIconEnabled = true
+        end)
+    end
 end
 
 local function keyCodeToDisplay(keyCode)
@@ -298,7 +295,7 @@ local function setAimbotShiftCursorLocked(locked)
         if locked then
             UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
             UserInputService.MouseIconEnabled = false
-        elseif not State.freecamEnabled and not State.spectating and not isPcShiftLocked() then
+        elseif not State.freecamEnabled and not State.spectating then
             UserInputService.MouseBehavior = Enum.MouseBehavior.Default
             UserInputService.MouseIconEnabled = true
         end
@@ -315,7 +312,7 @@ local function maintainPcShiftLockCursor()
         setAimbotShiftCursorLocked(false)
         return
     end
-    setAimbotShiftCursorLocked(isPcShiftLocked())
+    setAimbotShiftCursorLocked(State.shiftLockActive == true)
 end
 
 local function getShiftLockAimScreen()
@@ -358,6 +355,7 @@ State.holdingMobileAim = false
 State.mobileAimCamFlatDist = nil
 State.mobileAimCamHeight = nil
 State.shiftLockActive = false
+State.shiftLockSuppressed = false
 State.mobileAimDragUnlocked = false
 State.trackedConnections = {}
 State.hubSliderDrag = nil
@@ -794,12 +792,12 @@ end
 
 local function loadGuiScale()
     local saved = tonumber(fsRead(CONST.GUI_SCALE_PATH))
-    if saved and saved >= 0.3 and saved <= 1.5 then return saved end
+    if saved and saved >= 0.3 and saved <= 1.0 then return saved end
     return State.isMobile and 0.62 or 1.0
 end
 
 local function applyGuiScale(scale)
-    State.guiScale = math.clamp(scale, 0.3, 1.5)
+    State.guiScale = math.clamp(scale, 0.3, 1.0)
     if UI.WindowScale then
         UI.WindowScale.Scale = State.guiScale
     end
@@ -3146,17 +3144,27 @@ UI.ToggleSizeSlider, UI.setToggleSizeSliderValue = createHubSlider(
 
 UI.ResetTogglePosBtn = createHubButton(SettingsList, "Reset Toggle Position", "Move cube back to top-left")
 
-UI.GuiSizeSlider, UI.setGuiSizeSliderValue = createHubSlider(
+local _, GuiSizeBox = createHubTextInput(
     SettingsList,
     "GUI Size",
-    30, 130,
-    math.floor(State.guiScale * 100),
-    function(value)
-        if NF.F.applyGuiScale then
-            NF.F.applyGuiScale(value / 100)
-        end
-    end
+    "30-100",
+    tostring(math.floor(State.guiScale * 100))
 )
+UI.GuiSizeBox = GuiSizeBox
+
+bindConnection(GuiSizeBox.FocusLost:Connect(function()
+    local raw = GuiSizeBox.Text:gsub("%%", ""):gsub("^%s+", ""):gsub("%s+$", "")
+    local n = tonumber(raw)
+    if not n then
+        GuiSizeBox.Text = tostring(math.floor(State.guiScale * 100))
+        return
+    end
+    n = math.clamp(math.floor(n + 0.5), 30, 100)
+    GuiSizeBox.Text = tostring(n)
+    if NF.F.applyGuiScale then
+        NF.F.applyGuiScale(n / 100)
+    end
+end))
 
 UI.SwappedMouseToggle = createHubButton(
     SettingsList,
