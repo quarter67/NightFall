@@ -288,6 +288,36 @@ local function ensurePcAimMouseFree()
     end)
 end
 
+local AIM_CURSOR_GUI_POS = UDim2.new(0.5, -2, 0.5, -2)
+local AIM_CURSOR_SCREEN_OFFSET = Vector2.new(-2, -2)
+
+local function setAimbotShiftCursorLocked(locked)
+    if State.isMobile then return end
+    pcall(function()
+        if locked then
+            UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
+            UserInputService.MouseIconEnabled = false
+        elseif not State.freecamEnabled and not State.spectating then
+            UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+            UserInputService.MouseIconEnabled = true
+        end
+    end)
+    if UI.AimCursor then
+        UI.AimCursor.Visible = locked == true
+        UI.AimCursor.Position = AIM_CURSOR_GUI_POS
+    end
+end
+
+local function getShiftLockAimScreen()
+    local cam = refreshCamera()
+    if not cam then
+        local loc = UserInputService:GetMouseLocation()
+        return Vector2.new(loc.X, loc.Y)
+    end
+    local vp = cam.ViewportSize
+    return Vector2.new(vp.X / 2 + AIM_CURSOR_SCREEN_OFFSET.X, vp.Y / 2 + AIM_CURSOR_SCREEN_OFFSET.Y)
+end
+
 local AIM_VIEWPORT_INSET_Y = 36
 
 local function getViewportInsetY()
@@ -686,6 +716,21 @@ ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 ScreenGui.DisplayOrder = 1000
 ScreenGui.Parent = GUI_PARENT
 UI.ScreenGui = ScreenGui
+
+UI.AimCursor = Instance.new("Frame")
+UI.AimCursor.Name = "AimCursor"
+UI.AimCursor.Size = UDim2.new(0, 5, 0, 5)
+UI.AimCursor.AnchorPoint = Vector2.new(0.5, 0.5)
+UI.AimCursor.Position = AIM_CURSOR_GUI_POS
+UI.AimCursor.BackgroundColor3 = COLORS.accentLight
+UI.AimCursor.BorderSizePixel = 0
+UI.AimCursor.Visible = false
+UI.AimCursor.Active = false
+UI.AimCursor.ZIndex = 200
+UI.AimCursor.Parent = ScreenGui
+local aimCursorCorner = Instance.new("UICorner")
+aimCursorCorner.CornerRadius = UDim.new(1, 0)
+aimCursorCorner.Parent = UI.AimCursor
 
 -- Default: center of the screen (button is 90x90, so offset by -45)
 local DEFAULT_AIM_POS = UDim2.new(0.5, -45, 0.5, -45)
@@ -2279,6 +2324,8 @@ NF.F.isShiftLockKeyInput = isShiftLockKeyInput
 NF.F.getAimReferenceUsesCenter = getAimReferenceUsesCenter
 NF.F.syncPcAimHoldState = syncPcAimHoldState
 NF.F.ensurePcAimMouseFree = ensurePcAimMouseFree
+NF.F.setAimbotShiftCursorLocked = setAimbotShiftCursorLocked
+NF.F.getShiftLockAimScreen = getShiftLockAimScreen
 NF.F.syncPcAimCursorFromSystem = syncPcAimCursorFromSystem
 NF.F.saveAimbotSettings = saveAimbotSettings
 NF.F.loadAimbotSettings = loadAimbotSettings
@@ -3173,6 +3220,7 @@ State.bloodManipHighlight = nil
 State.bloodManipLockPos = nil
 State.bloodManipWalkAwayStart = nil
 State.bloodManipExecuting = false
+State.bloodManipTargetLockedAt = nil
 State.removeBloodManipEffects = false
 State.bloodEffectSavedFov = 70
 State.bloodEffectSavedMaxZoom = 128
@@ -4276,7 +4324,7 @@ local function updateJumpHack(humanoid)
 end
 
 local function updateMovementHacks()
-    if State.flingInProgress then return end
+    if State.flingInProgress or State.bloodManipExecuting then return end
     local humanoid = getHumanoid()
     local hrp = getRoot()
     if not humanoid or not hrp then return end
@@ -4346,6 +4394,7 @@ local function getOrCreateFlightMovers(hrp, cam)
 end
 
 local function updateFlight()
+    if State.bloodManipExecuting then return end
     if State.flingInProgress then return end
     local humanoid = getHumanoid()
     local hrp = getRoot()
@@ -4870,6 +4919,7 @@ local function flingHomelander()
 end
 
 local function updateSpin(dt)
+    if State.bloodManipExecuting then return end
     if not State.spinEnabled then return end
     local hrp = getRoot()
     if hrp then
@@ -6341,12 +6391,25 @@ local function resetBloodManipState()
     State.bloodManipTarget = nil
     State.bloodManipLockPos = nil
     State.bloodManipWalkAwayStart = nil
+    State.bloodManipTargetLockedAt = nil
     clearBloodManipHighlight()
 end
 
-local BLOOD_MANIP_FLEE_TIME = 4.2   -- seconds target must flee before TP (was 4.3)
-local BLOOD_MANIP_STAY_TIME = 0.70  -- seconds to hold behind target (was 0.60)
-local BLOOD_MANIP_FLEE_DIST = 4     -- studs target must move to count as fleeing
+local BLOOD_MANIP_FLEE_TIME = 2.0
+local BLOOD_MANIP_STAY_TIME = 0.85
+local BLOOD_MANIP_FLEE_DIST = 3
+local BLOOD_MANIP_HOLD_KILL_TIME = 2.0
+
+local function bloodManipTeleportHrp(hrp, cf)
+    if not hrp or not cf then return end
+    pcall(function()
+        hrp.CFrame = cf
+        hrp.AssemblyLinearVelocity = Vector3.zero
+        hrp.AssemblyAngularVelocity = Vector3.zero
+        hrp.Velocity = Vector3.zero
+        hrp.RotVelocity = Vector3.zero
+    end)
+end
 
 local function getBehindTargetCFrame(targetHrp)
     if not targetHrp then return nil end
@@ -6369,9 +6432,13 @@ local function executeBloodManipKill(targetPlayer)
             return
         end
 
+        if NF.F.removeFlightPhysics then
+            NF.F.removeFlightPhysics(hrp)
+        end
+
         local returnCFrame = hrp.CFrame
         local stayUntil = tick() + BLOOD_MANIP_STAY_TIME
-        local holdConn = nil
+        local stepName = "NightFallBloodManipHold"
 
         pcall(function()
             setsimulationradius(2e19, 2e19)
@@ -6379,39 +6446,39 @@ local function executeBloodManipKill(targetPlayer)
             sethiddenproperty(player, "MaxSimulationRadius", 2e19)
         end)
 
-        holdConn = RunService.Heartbeat:Connect(function()
-            if tick() > stayUntil then return end
-
+        local function holdBehindTarget()
             local currentHrp = getRoot()
             local targetChar = targetPlayer.Character
             local targetHrp = targetChar and targetChar:FindFirstChild("HumanoidRootPart")
             if not currentHrp or not targetHrp then return end
 
             local cf = getBehindTargetCFrame(targetHrp)
-            if not cf then return end
+            if cf then
+                bloodManipTeleportHrp(currentHrp, cf)
+            end
+        end
 
-            pcall(function()
-                currentHrp.CFrame = cf
-                currentHrp.AssemblyLinearVelocity = Vector3.zero
-                currentHrp.AssemblyAngularVelocity = Vector3.zero
+        pcall(function() RunService:UnbindFromRenderStep(stepName) end)
+        pcall(function()
+            RunService:BindToRenderStep(stepName, Enum.RenderPriority.First.Value + 2, function()
+                if tick() <= stayUntil then
+                    holdBehindTarget()
+                else
+                    pcall(function() RunService:UnbindFromRenderStep(stepName) end)
+                end
             end)
         end)
 
+        holdBehindTarget()
         while tick() < stayUntil do
             task.wait()
         end
 
-        if holdConn then
-            pcall(function() holdConn:Disconnect() end)
-        end
+        pcall(function() RunService:UnbindFromRenderStep(stepName) end)
 
         local finalHrp = getRoot()
         if finalHrp then
-            pcall(function()
-                finalHrp.CFrame = returnCFrame
-                finalHrp.AssemblyLinearVelocity = Vector3.zero
-                finalHrp.AssemblyAngularVelocity = Vector3.zero
-            end)
+            bloodManipTeleportHrp(finalHrp, returnCFrame)
         end
 
         State.bloodManipExecuting = false
@@ -6421,6 +6488,7 @@ local function executeBloodManipKill(targetPlayer)
             local targetChar = targetPlayer.Character
             local targetHrp = targetChar and targetChar:FindFirstChild("HumanoidRootPart")
             State.bloodManipWalkAwayStart = nil
+            State.bloodManipTargetLockedAt = tick()
             State.bloodManipLockPos = targetHrp and targetHrp.Position or State.bloodManipLockPos
         end
     end)
@@ -6448,6 +6516,7 @@ local function updateBloodManipulator()
         State.bloodManipTarget = targetPlayer
         State.bloodManipLockPos = targetHrp.Position
         State.bloodManipWalkAwayStart = nil
+        State.bloodManipTargetLockedAt = tick()
         setBloodManipHighlight(targetPlayer)
         return
     end
@@ -6468,6 +6537,12 @@ local function updateBloodManipulator()
         setBloodManipHighlight(targetPlayer)
     end
 
+    if State.bloodManipTargetLockedAt
+        and tick() - State.bloodManipTargetLockedAt >= BLOOD_MANIP_HOLD_KILL_TIME then
+        executeBloodManipKill(targetPlayer)
+        return
+    end
+
     if State.bloodManipLockPos then
         local movedAway = (targetHrp.Position - State.bloodManipLockPos).Magnitude >= BLOOD_MANIP_FLEE_DIST
         if movedAway then
@@ -6478,6 +6553,8 @@ local function updateBloodManipulator()
             if tick() - State.bloodManipWalkAwayStart >= BLOOD_MANIP_FLEE_TIME then
                 executeBloodManipKill(targetPlayer)
             end
+        else
+            State.bloodManipWalkAwayStart = nil
         end
     end
 end
@@ -6795,6 +6872,11 @@ local function getAimMousePos()
 end
 
 local function getViewportCenterScreen()
+    if not State.isMobile and State.aimbotEnabled and isAimHoldActive() and isPcShiftLocked() then
+        if NF.F.getShiftLockAimScreen then
+            return NF.F.getShiftLockAimScreen()
+        end
+    end
     local cam = refreshCamera()
     if not cam then return getAimMousePos() end
     local vp = cam.ViewportSize
@@ -7109,6 +7191,7 @@ local isShiftLockKeyInput = F.isShiftLockKeyInput
 local getAimReferenceUsesCenter = F.getAimReferenceUsesCenter
 local syncPcAimHoldState = F.syncPcAimHoldState
 local ensurePcAimMouseFree = F.ensurePcAimMouseFree
+local setAimbotShiftCursorLocked = F.setAimbotShiftCursorLocked
 local syncPcAimCursorFromSystem = F.syncPcAimCursorFromSystem
 local setHubVisible = F.setHubVisible
 local setMobileOverlayEnabled = F.setMobileOverlayEnabled
@@ -7386,19 +7469,36 @@ pcall(function() RunService:UnbindFromRenderStep("NightFallAimbot") end)
 pcall(function() RunService:UnbindFromRenderStep("NightFallAimbotFree") end)
 
 NF.F.runAimbotStep = function(dt)
+    local function releaseShiftAimCursor()
+        if setAimbotShiftCursorLocked then
+            setAimbotShiftCursorLocked(false)
+        end
+    end
+
     if State.ejected or not State.aimbotEnabled then
+        releaseShiftAimCursor()
         if not State.aimbotEnabled then restoreAimbotCamera() end
         return
     end
-    if State.freecamEnabled or State.spectating then return end
+    if State.freecamEnabled or State.spectating then
+        releaseShiftAimCursor()
+        return
+    end
 
     refreshShiftLockState()
     syncPcAimHoldState()
 
     if not isAimHoldActive() then
+        releaseShiftAimCursor()
         clearAimbotLock()
         restoreAimbotCamera()
         return
+    end
+
+    if not State.isMobile and isPcShiftLocked() and setAimbotShiftCursorLocked then
+        setAimbotShiftCursorLocked(true)
+    elseif setAimbotShiftCursorLocked then
+        setAimbotShiftCursorLocked(false)
     end
 
     if not refreshCamera() then return end
@@ -7475,6 +7575,10 @@ ejectScript = function()
 
     pcall(function() RunService:UnbindFromRenderStep("NightFallAimbot") end)
     pcall(function() RunService:UnbindFromRenderStep("NightFallAimbotFree") end)
+    pcall(function() RunService:UnbindFromRenderStep("NightFallBloodManipHold") end)
+    if setAimbotShiftCursorLocked then
+        pcall(setAimbotShiftCursorLocked, false)
+    end
 
     for _, hl in pairs(State.highlights or {}) do
         pcall(function() hl:Destroy() end)
