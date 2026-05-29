@@ -1,4 +1,4 @@
--- BUILD: 2026-05-27-CLOSE-BTN-FIX17-dev
+-- BUILD: 2026-05-27-CAM-DRAG-FIX18-dev
 -- NightFall TEST BUILD (no key system)
 
 local NF = { State = {}, UI = {}, F = {}, COLORS = {}, CONST = {} }
@@ -256,10 +256,6 @@ local function handleShiftLockKeyPress()
     else
         State.shiftLockSuppressed = true
         setAimbotShiftCursorLocked(false)
-        pcall(function()
-            UserInputService.MouseBehavior = Enum.MouseBehavior.Default
-            UserInputService.MouseIconEnabled = true
-        end)
     end
 end
 
@@ -300,41 +296,71 @@ local function syncPcAimHoldState()
     State.holdingRightClick = UserInputService:IsMouseButtonPressed(getAimHoldButton())
 end
 
+local function isRobloxCameraDragging()
+    if State.isMobile then return false end
+    return UserInputService.MouseBehavior == Enum.MouseBehavior.LockCurrentPosition
+end
+
 local function ensurePcAimMouseFree()
-    if State.isMobile or isPcShiftLocked() then return end
+    if State.isMobile or isPcShiftLocked() or isRobloxCameraDragging() then return end
     pcall(function()
-        UserInputService.MouseBehavior = Enum.MouseBehavior.Default
-        UserInputService.MouseIconEnabled = true
+        if UserInputService.MouseBehavior ~= Enum.MouseBehavior.LockCurrentPosition then
+            UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+            UserInputService.MouseIconEnabled = true
+        end
     end)
 end
 
 local AIM_CURSOR_GUI_POS = UDim2.new(0.5, -2, 0.5, -2)
 local AIM_CURSOR_SCREEN_OFFSET = Vector2.new(-2, -2)
 
+local function releaseScriptShiftLockCursor()
+    if State.isMobile then return end
+    if UI.AimCursor then
+        UI.AimCursor.Visible = false
+    end
+    if not State.nfOwnsShiftLockCursor then return end
+    State.nfOwnsShiftLockCursor = false
+    pcall(function()
+        if UserInputService.MouseBehavior == Enum.MouseBehavior.LockCenter then
+            UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+        end
+        UserInputService.MouseIconEnabled = true
+    end)
+end
+
 local function setAimbotShiftCursorLocked(locked)
     if State.isMobile then return end
-    pcall(function()
-        if locked then
+    if locked then
+        pcall(function()
             UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
             UserInputService.MouseIconEnabled = false
-        elseif not State.freecamEnabled and not State.spectating then
-            UserInputService.MouseBehavior = Enum.MouseBehavior.Default
-            UserInputService.MouseIconEnabled = true
+            State.nfOwnsShiftLockCursor = true
+        end)
+        if UI.AimCursor then
+            UI.AimCursor.Visible = true
+            UI.AimCursor.Position = AIM_CURSOR_GUI_POS
         end
-    end)
-    if UI.AimCursor then
-        UI.AimCursor.Visible = locked == true
-        UI.AimCursor.Position = AIM_CURSOR_GUI_POS
+    else
+        releaseScriptShiftLockCursor()
     end
 end
 
 local function maintainPcShiftLockCursor()
     if State.isMobile or State.ejected then return end
     if State.freecamEnabled or State.spectating then
-        setAimbotShiftCursorLocked(false)
+        releaseScriptShiftLockCursor()
         return
     end
-    setAimbotShiftCursorLocked(State.shiftLockActive == true)
+    -- Roblox uses LockCurrentPosition while holding the camera drag button ù never override that.
+    if isRobloxCameraDragging() then
+        return
+    end
+    if State.shiftLockActive then
+        setAimbotShiftCursorLocked(true)
+    else
+        releaseScriptShiftLockCursor()
+    end
 end
 
 local function getShiftLockAimScreen()
@@ -378,6 +404,7 @@ State.mobileAimCamFlatDist = nil
 State.mobileAimCamHeight = nil
 State.shiftLockActive = false
 State.shiftLockSuppressed = false
+State.nfOwnsShiftLockCursor = false
 State.mobileAimDragUnlocked = false
 State.trackedConnections = {}
 State.hubSliderDrag = nil
@@ -6902,12 +6929,6 @@ local function ensurePcGameplay()
     if State.isMobile or State.ejected then return end
     if State.freecamEnabled or State.spectating then return end
     enableRobloxMovementControls()
-    if not State.shiftLockActive then
-        pcall(function()
-            UserInputService.MouseBehavior = Enum.MouseBehavior.Default
-            UserInputService.MouseIconEnabled = true
-        end)
-    end
 end
 
 NF.F.enableRobloxMovementControls = enableRobloxMovementControls
