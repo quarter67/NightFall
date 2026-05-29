@@ -1,4 +1,4 @@
--- BUILD: 2026-05-27-SHIFTLOCK-CAM-FIX14-dev
+-- BUILD: 2026-05-27-ESP-RESCAN-FIX16-dev
 -- NightFall TEST BUILD (no key system)
 
 local NF = { State = {}, UI = {}, F = {}, COLORS = {}, CONST = {} }
@@ -155,14 +155,18 @@ local function restoreAimbotCamera()
     local cam = refreshCamera()
     if not cam then return end
     pcall(function()
+        local needsSubject = cam.CameraType == Enum.CameraType.Scriptable
+            or State.aimbotSavedCameraType ~= nil
         if State.aimbotSavedCameraType then
             cam.CameraType = State.aimbotSavedCameraType
         elseif cam.CameraType == Enum.CameraType.Scriptable then
             cam.CameraType = Enum.CameraType.Custom
         end
-        local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
-        if hum then
-            cam.CameraSubject = hum
+        if needsSubject then
+            local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+            if hum then
+                cam.CameraSubject = hum
+            end
         end
         if State.isMobile then
             pcall(function()
@@ -174,6 +178,24 @@ local function restoreAimbotCamera()
     State.aimbotSavedCameraType = nil
     State.mobileAimCamFlatDist = nil
     State.mobileAimCamHeight = nil
+end
+
+local function cameraNeedsAimbotRestore()
+    if State.freecamEnabled or State.spectating or State.ejected then
+        return false
+    end
+    if State.isMobile and State.holdingMobileAim then
+        return false
+    end
+    local cam = refreshCamera()
+    if not cam then return false end
+    if State.aimbotSavedCameraType then return true end
+    return cam.CameraType == Enum.CameraType.Scriptable
+end
+
+local function ensureGameplayCamera()
+    if not cameraNeedsAimbotRestore() then return end
+    restoreAimbotCamera()
 end
 
 local function isAimHoldActive()
@@ -2323,6 +2345,8 @@ NF.F.setHubVisible = setHubVisible
 NF.F.setMobileOverlayEnabled = setMobileOverlayEnabled
 NF.F.refreshCamera = refreshCamera
 NF.F.restoreAimbotCamera = restoreAimbotCamera
+NF.F.cameraNeedsAimbotRestore = cameraNeedsAimbotRestore
+NF.F.ensureGameplayCamera = ensureGameplayCamera
 NF.F.isAimHoldActive = isAimHoldActive
 NF.F.isPcShiftLocked = isPcShiftLocked
 NF.F.refreshShiftLockState = refreshShiftLockState
@@ -2722,10 +2746,10 @@ local CombatLayout = Instance.new("UIListLayout")
 CombatLayout.Padding = UDim.new(0, 8)
 CombatLayout.Parent = CombatList
 
-UI.HomelanderESPToggle = createHubButton(CombatList, "Killer ESP", "Homelander & Stormfront ? rescans every 5s")
+UI.HomelanderESPToggle = createHubButton(CombatList, "Killer ESP", "Homelander & Stormfront  rescans every 3s")
 setHubToggle(UI.HomelanderESPToggle, false)
 
-UI.TeamESPToggle = createHubButton(CombatList, "Team ESP", "Rescans players every 5 seconds")
+UI.TeamESPToggle = createHubButton(CombatList, "Team ESP", "Rescans players every 3 seconds")
 setHubToggle(UI.TeamESPToggle, false)
 
 UI.AimbotToggle = createHubButton(CombatList, "Aimbot", "Enable ? PC hold RMB to lock ? Mobile tap LOCK ON")
@@ -5562,6 +5586,8 @@ end
 
 State.lastTempVScanTime = 0
 State.lastHomelanderScanTime = 0
+State.lastPlayerESPScanTime = 0
+State.espRescanInterval = 3
 State.tempVRescanPending = false
 
 local function requestTempVRescan()
@@ -6829,6 +6855,21 @@ end
 
 NF.F.ensureMobileGameplay = ensureMobileGameplay
 
+local function ensurePcGameplay()
+    if State.isMobile or State.ejected then return end
+    if State.freecamEnabled or State.spectating then return end
+    enableRobloxMovementControls()
+    if not State.shiftLockActive then
+        pcall(function()
+            UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+            UserInputService.MouseIconEnabled = true
+        end)
+    end
+end
+
+NF.F.enableRobloxMovementControls = enableRobloxMovementControls
+NF.F.ensurePcGameplay = ensurePcGameplay
+
 local clearAimbotLock, updateAimbotLock, aimMouseAtHead = (function()
 local AIMBOT_MAX_FOV = 220
 local AIMBOT_LOST_GRACE = 0.6
@@ -6999,7 +7040,11 @@ local function clearAimbotLock()
     State.aimbotHeadLostAt = nil
     clearPcAimCursor()
     clearMobileAimCameraSnapshot()
-    restoreAimbotCamera()
+    if NF.F.ensureGameplayCamera then
+        NF.F.ensureGameplayCamera()
+    else
+        restoreAimbotCamera()
+    end
     if camera and camera.CameraType == Enum.CameraType.Scriptable then
         pcall(function() camera.CameraType = Enum.CameraType.Custom end)
         State.aimbotSavedCameraType = nil
@@ -7218,6 +7263,10 @@ local syncPcAimHoldState = F.syncPcAimHoldState
 local ensurePcAimMouseFree = F.ensurePcAimMouseFree
 local setAimbotShiftCursorLocked = F.setAimbotShiftCursorLocked
 local maintainPcShiftLockCursor = F.maintainPcShiftLockCursor
+local ensureGameplayCamera = F.ensureGameplayCamera
+local cameraNeedsAimbotRestore = F.cameraNeedsAimbotRestore
+local ensurePcGameplay = F.ensurePcGameplay
+local enableRobloxMovementControls = F.enableRobloxMovementControls
 local syncPcAimCursorFromSystem = F.syncPcAimCursorFromSystem
 local setHubVisible = F.setHubVisible
 local setMobileOverlayEnabled = F.setMobileOverlayEnabled
@@ -7466,11 +7515,11 @@ bindConnection(RunService.RenderStepped:Connect(function(dt)
         end
     end
 
-    if State.homelanderESPEnabled and type(State.scanForHomelander) == "function" then
+    if not State.ejected and refreshPlayerESPScan then
         local now = tick()
-        if now - (State.lastHomelanderScanTime or 0) >= 2 then
-            State.lastHomelanderScanTime = now
-            State.scanForHomelander()
+        if now - (State.lastPlayerESPScanTime or 0) >= (State.espRescanInterval or 3) then
+            State.lastPlayerESPScanTime = now
+            pcall(refreshPlayerESPScan)
         end
     end
     
@@ -7504,7 +7553,9 @@ NF.F.runAimbotStep = function(dt)
 
     if State.ejected or not State.aimbotEnabled then
         releaseShiftAimCursor()
-        if not State.aimbotEnabled then restoreAimbotCamera() end
+        if ensureGameplayCamera then
+            ensureGameplayCamera()
+        end
         return
     end
     if State.freecamEnabled or State.spectating then
@@ -7517,8 +7568,10 @@ NF.F.runAimbotStep = function(dt)
 
     if not isAimHoldActive() then
         releaseShiftAimCursor()
-        clearAimbotLock()
-        restoreAimbotCamera()
+        if State.aimbotLockedTarget or State.aimbotLockedHead
+            or (cameraNeedsAimbotRestore and cameraNeedsAimbotRestore()) then
+            clearAimbotLock()
+        end
         return
     end
 
@@ -7542,6 +7595,10 @@ bindConnection(RunService.RenderStepped:Connect(function(dt)
         refreshShiftLockState()
         if maintainPcShiftLockCursor then
             maintainPcShiftLockCursor()
+        end
+        if ensurePcGameplay and (not State.lastPcGameplayEnsure or tick() - State.lastPcGameplayEnsure > 2) then
+            State.lastPcGameplayEnsure = tick()
+            ensurePcGameplay()
         end
     end
     if not State.isMobile and isPcShiftLocked() then return end
@@ -7843,14 +7900,7 @@ bindConnection(Workspace.DescendantRemoving:Connect(function(obj)
     end
 end))
 
--- Player ESP scan loop (every 5 seconds)
-task.spawn(function()
-    refreshPlayerESPScan()
-    while UI.ScreenGui and UI.ScreenGui.Parent and not State.ejected do
-        task.wait(5)
-        refreshPlayerESPScan()
-    end
-end)
+-- Player ESP rescan runs on RenderStepped (every 3s via ESP_RESCAN_INTERVAL)
 
 bindConnection(Players.PlayerAdded:Connect(function()
     refreshMiscPlayerList()
@@ -7876,6 +7926,7 @@ bindConnection(player.CharacterAdded:Connect(function(character)
     task.spawn(function()
         setupCharacterMovement(character)
         ensureMobileGameplay()
+        if ensurePcGameplay then ensurePcGameplay() end
     end)
 end))
 
@@ -7883,12 +7934,14 @@ if player.Character then
     task.spawn(function()
         setupCharacterMovement(player.Character)
         ensureMobileGameplay()
+        if ensurePcGameplay then ensurePcGameplay() end
     end)
 end
 
 task.defer(function()
     dismissNightFallLoaderUi()
     ensureMobileGameplay()
+    if ensurePcGameplay then ensurePcGameplay() end
     if State.isMobile then
         print("[NightFall] Mobile mode - menu closed on load. Tap NF cube to open.")
         task.spawn(function()
