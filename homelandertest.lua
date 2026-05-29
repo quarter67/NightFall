@@ -1,4 +1,4 @@
--- BUILD: 2026-05-27-MOBILE-MOVE-FIX11-dev
+-- BUILD: 2026-05-27-MOBILE-MOVE-FIX12-dev
 -- NightFall TEST BUILD (no key system)
 
 local NF = { State = {}, UI = {}, F = {}, COLORS = {}, CONST = {} }
@@ -468,81 +468,114 @@ local function addButtonHitLayer(btn)
     hit.Parent = btn
 end
 
+local function pointInGui(gui, screenPos)
+    if not gui or not gui:IsA("GuiObject") or not gui.Parent or not gui.Visible then return false end
+    if not gui.Active and gui.Name ~= "HitLayer" then return false end
+    local ap = gui.AbsolutePosition
+    local as = gui.AbsoluteSize
+    if as.X < 2 or as.Y < 2 then return false end
+    return screenPos.X >= ap.X and screenPos.X <= ap.X + as.X
+        and screenPos.Y >= ap.Y and screenPos.Y <= ap.Y + as.Y
+end
+
 State.hubClickRegistry = State.hubClickRegistry or {}
+
+local function resolveHubClickAt(pos)
+    local layers = { UI.ScreenGui, UI.ToggleGui }
+    for _, layer in ipairs(layers) do
+        if layer and layer.Parent then
+            local ok, objects = pcall(function()
+                return layer:GetGuiObjectsAtPosition(pos.X, pos.Y)
+            end)
+            if ok and objects then
+                for _, obj in ipairs(objects) do
+                    local cur = obj
+                    while cur and cur ~= layer do
+                        local fireFn = State.hubClickRegistry[cur]
+                        if fireFn then
+                            return fireFn
+                        end
+                        cur = cur.Parent
+                    end
+                end
+            end
+        end
+    end
+
+    local bestFn, bestArea = nil, math.huge
+    for guiObj, fireFn in pairs(State.hubClickRegistry) do
+        if guiObj:IsA("GuiObject") and pointInGui(guiObj, pos) then
+            local as = guiObj.AbsoluteSize
+            local area = as.X * as.Y
+            if area > 0 and area < bestArea then
+                bestArea = area
+                bestFn = fireFn
+            end
+        end
+    end
+    return bestFn
+end
 
 local function ensureHubTouchRouter()
     if State.hubTouchRouterReady then return end
     State.hubTouchRouterReady = true
 
-    local pendingTouch = nil
+    local touchStarts = {}
     local lastRouterFire = 0
 
-    local function touchPosVariants(input)
+    local function posVariants(input)
         local x, y = input.Position.X, input.Position.Y
         local inset = GuiService:GetGuiInset()
-        return {
+        local mouseOk, mouseLoc = pcall(function()
+            return UserInputService:GetMouseLocation()
+        end)
+        local variants = {
             Vector2.new(x, y),
             Vector2.new(x, y + inset.Y),
             Vector2.new(x, y - inset.Y),
         }
-    end
-
-    local function resolveHubClick(pos)
-        local layers = { UI.ScreenGui, UI.ToggleGui }
-        for _, layer in ipairs(layers) do
-            if layer and layer.Parent then
-                local ok, objects = pcall(function()
-                    return layer:GetGuiObjectsAtPosition(pos.X, pos.Y)
-                end)
-                if ok and objects then
-                    for _, obj in ipairs(objects) do
-                        local cur = obj
-                        while cur and cur ~= layer do
-                            local fireFn = State.hubClickRegistry[cur]
-                            if fireFn then
-                                return fireFn
-                            end
-                            cur = cur.Parent
-                        end
-                    end
-                end
-            end
+        if mouseOk and mouseLoc then
+            table.insert(variants, Vector2.new(mouseLoc.X, mouseLoc.Y))
+            table.insert(variants, Vector2.new(mouseLoc.X, mouseLoc.Y + inset.Y))
         end
-        return nil
+        return variants
     end
 
-    bindConnection(UserInputService.InputBegan:Connect(function(input, gameProcessed)
-        if gameProcessed then return end
+    bindConnection(UserInputService.InputBegan:Connect(function(input)
         if input.UserInputType ~= Enum.UserInputType.Touch then return end
-        for _, pos in ipairs(touchPosVariants(input)) do
-            local fireFn = resolveHubClick(pos)
-            if fireFn then
-                pendingTouch = {
-                    fireFn = fireFn,
-                    start = pos,
-                    input = input,
-                }
-                return
-            end
-        end
+        touchStarts[input] = Vector2.new(input.Position.X, input.Position.Y)
     end))
 
     bindConnection(UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType ~= Enum.UserInputType.Touch or not pendingTouch then return end
-        if pendingTouch.input ~= input then return end
+        if input.UserInputType ~= Enum.UserInputType.Touch then return end
+        local startPos = touchStarts[input]
+        touchStarts[input] = nil
+        if not startPos then return end
+
         local endPos = Vector2.new(input.Position.X, input.Position.Y)
-        if (endPos - pendingTouch.start).Magnitude > 30 then
-            pendingTouch = nil
-            return
-        end
+        if (endPos - startPos).Magnitude > 36 then return end
+
         local now = tick()
-        if now - lastRouterFire < 0.15 then
-            pendingTouch = nil
-            return
+        if now - lastRouterFire < 0.12 then return end
+
+        local seen = {}
+        for _, pos in ipairs(posVariants(input)) do
+            local key = math.floor(pos.X) .. ":" .. math.floor(pos.Y)
+            if not seen[key] then
+                seen[key] = true
+                local fireFn = resolveHubClickAt(pos)
+                if fireFn then
+                    lastRouterFire = now
+                    task.defer(fireFn)
+                    return
+                end
+            end
         end
-        lastRouterFire = now
-        task.defer(pendingTouch.fireFn)
-        pendingTouch = nil
+        local fireFn = resolveHubClickAt(startPos)
+        if fireFn then
+            lastRouterFire = now
+            task.defer(fireFn)
+        end
     end))
 end
 
@@ -557,7 +590,7 @@ local function bindHubClick(btn, fn)
     local lastFire = 0
     local function fire()
         local now = tick()
-        if now - lastFire < 0.18 then return end
+        if now - lastFire < 0.15 then return end
         lastFire = now
         task.defer(fn)
     end
@@ -568,9 +601,7 @@ local function bindHubClick(btn, fn)
         State.hubClickRegistry[hit] = fire
     end
 
-    if UserInputService.TouchEnabled then
-        ensureHubTouchRouter()
-    end
+    ensureHubTouchRouter()
 
     bindConnection(btn.MouseButton1Click:Connect(fire))
     bindConnection(btn.Activated:Connect(fire))
@@ -581,14 +612,22 @@ local function bindHubClick(btn, fn)
         end)
     end
 
-    local hitLayer = btn:FindFirstChild("HitLayer")
-    if hitLayer and hitLayer:IsA("GuiButton") then
-        bindConnection(hitLayer.MouseButton1Click:Connect(fire))
-        bindConnection(hitLayer.Activated:Connect(fire))
+    local function bindTouchTarget(target)
+        if not target then return end
+        bindConnection(target.MouseButton1Click:Connect(fire))
+        bindConnection(target.Activated:Connect(fire))
         pcall(function()
-            bindConnection(hitLayer.TouchTap:Connect(fire))
+            bindConnection(target.TouchTap:Connect(fire))
         end)
+        bindConnection(target.InputEnded:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.Touch then
+                fire()
+            end
+        end))
     end
+
+    bindTouchTarget(btn)
+    bindTouchTarget(hit)
 end
 
 -- Safe root update with error handling
@@ -1596,6 +1635,11 @@ local function switchTab(name)
         if State.__miscCollapseAll then
             State.__miscCollapseAll()
         end
+        task.defer(function()
+            if NF.F.refreshMiscPlayerList then
+                NF.F.refreshMiscPlayerList()
+            end
+        end)
         if NF.F.refreshMiscPlayerList then
             NF.F.refreshMiscPlayerList()
         end
@@ -1672,6 +1716,7 @@ local function createHubButton(parent, title, subtitle)
     btn.AutoButtonColor = State.isMobile
     btn.Active = true
     btn.Selectable = true
+    btn.ZIndex = 3
     btn.Parent = parent
     applyCorner(btn, CONST.RADIUS.md)
     applyStroke(btn, COLORS.border, 1, 0.65)
@@ -2151,6 +2196,9 @@ local function createMiscFold(parent, title, startExpanded, pageScroll)
                 scrollToVisible(pageScroll, section, 24)
             end)
         end
+        if expanded and title == "Spectate" and NF.F.refreshMiscPlayerList then
+            task.defer(NF.F.refreshMiscPlayerList)
+        end
     end
 
     table.insert(miscFoldSetters, setExpanded)
@@ -2561,6 +2609,11 @@ UI.ATrainKillToggle = createHubButton(
 )
 setHubToggle(UI.ATrainKillToggle, false)
 UI.ATrainKillToggle.Visible = State.isPremium
+bindHubClick(UI.ATrainKillToggle, function()
+    if NF.F.setATrainKill then
+        NF.F.setATrainKill(not State.aTrainKillEnabled)
+    end
+end)
 
 local CombatScroll = Instance.new("ScrollingFrame")
 CombatScroll.Size = UDim2.new(1, 0, 1, 0)
@@ -2612,6 +2665,14 @@ UI.ClearESPBtn = createHubButton(CombatList, "Clear All ESP", "Remove highlights
 
 UI.BloodManipToggle = createHubButton(CombatList, "Blood Manipulator Kill", "Hold E on head ? stays locked until release")
 setHubToggle(UI.BloodManipToggle, false)
+bindHubClick(UI.BloodManipToggle, function()
+    State.bloodManipEnabled = not State.bloodManipEnabled
+    setHubToggle(UI.BloodManipToggle, State.bloodManipEnabled)
+    if not State.bloodManipEnabled then
+        State.holdingBloodManipKey = false
+        if NF.F.resetBloodManipState then NF.F.resetBloodManipState() end
+    end
+end)
 
 end -- scope block 1a-move (GUI ? Luau local register limit)
 
@@ -2648,21 +2709,44 @@ TrollLayout.Parent = TrollList
 
 UI.SpinToggle = createHubButton(TrollList, "Spin Bot", "Spin your character constantly")
 setHubToggle(UI.SpinToggle, false)
+bindHubClick(UI.SpinToggle, function()
+    State.spinEnabled = not State.spinEnabled
+    setHubToggle(UI.SpinToggle, State.spinEnabled)
+end)
 
 UI.DesyncToggle = createHubButton(TrollList, "Desync", "Server marker + client label ? hold E to interact")
 setHubToggle(UI.DesyncToggle, false)
+bindHubClick(UI.DesyncToggle, function()
+    if NF.F.setDesync then
+        NF.F.setDesync(not State.desyncEnabled)
+        setHubToggle(UI.DesyncToggle, State.desyncEnabled, "ON", "OFF")
+    end
+end)
 
 UI.FlingHomelanderBtn = createHubButton(TrollList, "Fling Homelander", "SkidFling overlap ? needs collision")
+bindHubClick(UI.FlingHomelanderBtn, function()
+    if NF.F.flingHomelander then task.spawn(NF.F.flingHomelander) end
+end)
 
 UI.FlingSelfBtn = createHubButton(TrollList, "Fling Self", "Launch yourself into the air")
+bindHubClick(UI.FlingSelfBtn, function()
+    if NF.F.flingSelf then NF.F.flingSelf() end
+end)
 
 UI.TpRandomBtn = createHubButton(TrollList, "TP To Random Player", "Teleport to a random player")
-
-UI.TpAllToMeBtn = createHubButton(TrollList, "Bring Players To You", "Pull nearby players to you")
+bindHubClick(UI.TpRandomBtn, function()
+    if NF.F.tpRandomPlayer then NF.F.tpRandomPlayer() end
+end)
 
 UI.AnnoySoundBtn = createHubButton(TrollList, "Play Loud Sound", "Play an annoying sound locally")
+bindHubClick(UI.AnnoySoundBtn, function()
+    if NF.F.playAnnoyingSound then NF.F.playAnnoyingSound() end
+end)
 
 UI.ResetTrollBtn = createHubButton(TrollList, "Reset Troll Effects", "Turn off spin & desync")
+bindHubClick(UI.ResetTrollBtn, function()
+    if NF.F.resetTrollEffects then NF.F.resetTrollEffects() end
+end)
 
 local MiscScroll = Instance.new("ScrollingFrame")
 MiscScroll.Name = "MiscScroll"
@@ -2694,7 +2778,7 @@ local MiscLayout = Instance.new("UIListLayout")
 MiscLayout.Padding = UDim.new(0, 8)
 MiscLayout.Parent = MiscContent
 
-local _, SpectateBody = createMiscFold(MiscContent, "Spectate", false, MiscScroll)
+local _, SpectateBody = createMiscFold(MiscContent, "Spectate", State.isMobile, MiscScroll)
 
 local MiscSubLabel = Instance.new("TextLabel")
 MiscSubLabel.Size = UDim2.new(1, 0, 0, 18)
@@ -2736,6 +2820,7 @@ UI.SpectatePlayerList = Instance.new("Frame")
 UI.SpectatePlayerList.Size = UDim2.new(1, -12, 0, 0)
 UI.SpectatePlayerList.Position = UDim2.new(0, 6, 0, 6)
 UI.SpectatePlayerList.BackgroundTransparency = 1
+UI.SpectatePlayerList.Active = false
 UI.SpectatePlayerList.Parent = UI.SpectatePlayerScroll
 
 local SpectatePlayerLayout = Instance.new("UIListLayout")
@@ -2748,17 +2833,45 @@ SpectatePlayerLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(fun
 end)
 
 UI.RefreshSpectateListBtn = createHubButton(SpectateBody, "Refresh Player List", "Update online players")
+bindHubClick(UI.RefreshSpectateListBtn, function()
+    if NF.F.refreshMiscPlayerList then NF.F.refreshMiscPlayerList() end
+end)
+
 UI.SpectateBtn = createHubButton(SpectateBody, "Spectate", "Right-drag orbit ? scroll zoom")
+bindHubClick(UI.SpectateBtn, function()
+    if State.spectateSelected then
+        if NF.F.stopFreecam then NF.F.stopFreecam() end
+        if NF.F.startSpectate then NF.F.startSpectate(State.spectateSelected) end
+    else
+        warn("[NightFall] Select a player from the list first.")
+    end
+end)
+
 UI.StopSpectateBtn = createHubButton(SpectateBody, "Stop Spectate", "Return camera to you")
+bindHubClick(UI.StopSpectateBtn, function()
+    if NF.F.stopSpectate then NF.F.stopSpectate() end
+end)
 
 local _, FlingBody = createMiscFold(MiscContent, "Fling", false, MiscScroll)
 
 UI.FlingSelectedBtn = createHubButton(FlingBody, "Fling Selected", "SkidFling ? turn off noclip/desync first")
+bindHubClick(UI.FlingSelectedBtn, function()
+    if State.spectateSelected and NF.F.skidFlingPlayer then
+        task.spawn(function()
+            NF.F.skidFlingPlayer(State.spectateSelected)
+        end)
+    else
+        warn("[NightFall] Select a player from the list first.")
+    end
+end)
 
 local _, FreecamBody = createMiscFold(MiscContent, "Freecam", false, MiscScroll)
 
 UI.FreecamToggle = createHubButton(FreecamBody, "Freecam", "WASD move ? right-drag look ? scroll speed")
 setHubToggle(UI.FreecamToggle, false)
+bindHubClick(UI.FreecamToggle, function()
+    if NF.F.setFreecam then NF.F.setFreecam(not State.freecamEnabled) end
+end)
 
 UI.FreecamSpeedSlider, UI.setFreecamSpeedSliderValue = createHubSlider(
     FreecamBody,
@@ -2779,6 +2892,11 @@ UI.RemoveBloodManipEffectsToggle = createHubButton(
     "Blocks red screen overlay & forced zoom"
 )
 setHubToggle(UI.RemoveBloodManipEffectsToggle, false)
+bindHubClick(UI.RemoveBloodManipEffectsToggle, function()
+    if NF.F.setRemoveBloodManipEffects then
+        NF.F.setRemoveBloodManipEffects(not State.removeBloodManipEffects)
+    end
+end)
 
 local _, AimbotBody = createMiscFold(MiscContent, "Aimbot", false, MiscScroll)
 
@@ -4767,20 +4885,6 @@ local function tpRandomPlayer()
     end)
 end
 
-local function bringPlayersToMe()
-    local hrp = getRoot()
-    if not hrp then return end
-    for _, plr in pairs(Players:GetPlayers()) do
-        if plr ~= player and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
-            pcall(function()
-                local targetHrp = plr.Character.HumanoidRootPart
-                local offset = Vector3.new(math.random(-6, 6), 0, math.random(-6, 6))
-                targetHrp.CFrame = hrp.CFrame * CFrame.new(offset)
-            end)
-        end
-    end
-end
-
 local function playAnnoyingSound()
     pcall(function()
         local sound = Instance.new("Sound")
@@ -4811,7 +4915,6 @@ NF.F.flingHomelander = flingHomelander
 NF.F.skidFlingPlayer = skidFlingPlayer
 NF.F.flingSelf = flingSelf
 NF.F.tpRandomPlayer = tpRandomPlayer
-NF.F.bringPlayersToMe = bringPlayersToMe
 NF.F.playAnnoyingSound = playAnnoyingSound
 NF.F.resetTrollEffects = resetTrollEffects
 
@@ -5610,7 +5713,6 @@ local setupCharacterMovement = F.setupCharacterMovement
 local applyJumpBoost = F.applyJumpBoost
 local applyJumpStats = F.applyJumpStats
 local tpRandomPlayer = F.tpRandomPlayer
-local bringPlayersToMe = F.bringPlayersToMe
 local playAnnoyingSound = F.playAnnoyingSound
 local clearAllTempVHighlights = F.clearAllTempVHighlights
 local clearAllTempVBillboards = F.clearAllTempVBillboards
@@ -6501,7 +6603,6 @@ local setupCharacterMovement = F.setupCharacterMovement
 local applyJumpBoost = F.applyJumpBoost
 local applyJumpStats = F.applyJumpStats
 local tpRandomPlayer = F.tpRandomPlayer
-local bringPlayersToMe = F.bringPlayersToMe
 local playAnnoyingSound = F.playAnnoyingSound
 local setATrainKill = F.setATrainKill
 local executeATrainKill = F.executeATrainKill
@@ -6947,7 +7048,6 @@ local setupCharacterMovement = F.setupCharacterMovement
 local applyJumpBoost = F.applyJumpBoost
 local applyJumpStats = F.applyJumpStats
 local tpRandomPlayer = F.tpRandomPlayer
-local bringPlayersToMe = F.bringPlayersToMe
 local playAnnoyingSound = F.playAnnoyingSound
 local setATrainKill = F.setATrainKill
 local executeATrainKill = F.executeATrainKill
@@ -7574,88 +7674,6 @@ do
     end
 end
 
-bindHubClick(UI.SpinToggle, function()
-    State.spinEnabled = not State.spinEnabled
-    setHubToggle(UI.SpinToggle, State.spinEnabled)
-end)
-
-bindHubClick(UI.DesyncToggle, function()
-    setDesync(not State.desyncEnabled)
-    setHubToggle(UI.DesyncToggle, State.desyncEnabled, "ON", "OFF")
-end)
-
-bindHubClick(UI.RefreshSpectateListBtn, function()
-    refreshMiscPlayerList()
-end)
-
-bindHubClick(UI.SpectateBtn, function()
-    if State.spectateSelected then
-        stopFreecam()
-        startSpectate(State.spectateSelected)
-    else
-        warn("[NightFall] Select a player from the list first.")
-    end
-end)
-
-bindHubClick(UI.StopSpectateBtn, function()
-    stopSpectate()
-end)
-
-bindHubClick(UI.FlingSelectedBtn, function()
-    if State.spectateSelected then
-        task.spawn(function()
-            skidFlingPlayer(State.spectateSelected)
-        end)
-    else
-        warn("[NightFall] Select a player from the list first.")
-    end
-end)
-
-bindHubClick(UI.FreecamToggle, function()
-    setFreecam(not State.freecamEnabled)
-end)
-
-bindHubClick(UI.RemoveBloodManipEffectsToggle, function()
-    setRemoveBloodManipEffects(not State.removeBloodManipEffects)
-end)
-
-bindHubClick(UI.BloodManipToggle, function()
-    State.bloodManipEnabled = not State.bloodManipEnabled
-    setHubToggle(UI.BloodManipToggle, State.bloodManipEnabled)
-    if not State.bloodManipEnabled then
-        State.holdingBloodManipKey = false
-        resetBloodManipState()
-    end
-end)
-
-bindHubClick(UI.ATrainKillToggle, function()
-    setATrainKill(not State.aTrainKillEnabled)
-end)
-
-bindHubClick(UI.FlingHomelanderBtn, function()
-    task.spawn(flingHomelander)
-end)
-
-bindHubClick(UI.FlingSelfBtn, function()
-    flingSelf()
-end)
-
-bindHubClick(UI.TpRandomBtn, function()
-    tpRandomPlayer()
-end)
-
-bindHubClick(UI.TpAllToMeBtn, function()
-    bringPlayersToMe()
-end)
-
-bindHubClick(UI.AnnoySoundBtn, function()
-    playAnnoyingSound()
-end)
-
-bindHubClick(UI.ResetTrollBtn, function()
-    resetTrollEffects()
-end)
-
 bindHubClick(UI.ClearESPBtn, function()
     -- Clear all player ESP
     for plr, _ in pairs(State.highlights) do
@@ -7747,9 +7765,9 @@ if type(NF.F.updateMovementHacks) ~= "function" or type(NF.F.updateTempVESP) ~= 
 end
 
 end -- scope block 2e (input + loops + wiring)
-print("[NightFall] Loaded - build 2026-05-27-MOBILE-MOVE-FIX11-dev")
+print("[NightFall] Loaded - build 2026-05-27-MOBILE-MOVE-FIX12-dev")
 if State.isMobile then
-    print("[NightFall] Mobile touch router active (GetGuiObjectsAtPosition + HitLayer)")
+    print("[NightFall] Mobile touch router v2 — InputEnded + brute-force hit test")
 end
 print("[NightFall] Aimbot: Combat tab - PC hold RMB - Mobile tap LOCK ON")
 if State.isPremium then
