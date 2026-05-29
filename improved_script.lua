@@ -390,6 +390,25 @@ COLORS.toggleOn = Color3.fromRGB(99, 102, 241)
 CONST.RADIUS = { sm = 6, md = 10, lg = 14, xl = 20, full = 999 }
 CONST.SIDEBAR_WIDTH = 132
 
+CONST.ICON = {
+    tabHome = string.char(226, 140, 130),
+    tabScanner = string.char(226, 151, 137),
+    tabMovement = string.char(226, 134, 151),
+    tabPremium = string.char(226, 152, 133),
+    tabCombat = string.char(226, 154, 161),
+    tabTroll = string.char(226, 152, 160),
+    tabMisc = string.char(226, 151, 148),
+    tabSettings = string.char(226, 154, 153),
+    foldClosed = string.char(226, 150, 184),
+    foldOpen = string.char(226, 150, 190),
+    close = string.char(195, 151),
+    flightUp = string.char(226, 134, 145),
+    flightDown = string.char(226, 134, 147),
+    tempv = string.char(226, 154, 161),
+    dot = string.char(194, 183),
+    dash = string.char(226, 128, 148),
+}
+
 local function tween(instance, props, duration)
     if State.isMobile then
         -- Skip animations on mobile ??? apply instantly to save CPU/GPU
@@ -1322,7 +1341,7 @@ UI.CloseBtn = Instance.new("TextButton")
 UI.CloseBtn.Size = UDim2.new(0, 32, 0, 32)
 UI.CloseBtn.Position = UDim2.new(1, -44, 0.5, -16)
 UI.CloseBtn.BackgroundColor3 = COLORS.surface
-UI.CloseBtn.Text = "??"
+UI.CloseBtn.Text = CONST.ICON.close
 UI.CloseBtn.TextColor3 = COLORS.textMuted
 UI.CloseBtn.TextSize = 22
 UI.CloseBtn.Font = Enum.Font.GothamMedium
@@ -1508,8 +1527,8 @@ local function makeMobileFlightBtn(label, xOff)
     local s = Instance.new("UIStroke"); s.Color = COLORS.border; s.Thickness = 2; s.Parent = btn
     return btn
 end
-UI.MobileFlightUpBtn   = makeMobileFlightBtn("???", -148)
-UI.MobileFlightDownBtn = makeMobileFlightBtn("???",  -76)
+UI.MobileFlightUpBtn   = makeMobileFlightBtn(CONST.ICON.flightUp, -148)
+UI.MobileFlightDownBtn = makeMobileFlightBtn(CONST.ICON.flightDown,  -76)
 
 bindConnection(UI.MobileFlightUpBtn.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.Touch then
@@ -1694,7 +1713,7 @@ local function createTab(name, icon)
     iconLabel.BackgroundTransparency = 1
     iconLabel.Text = icon
     iconLabel.TextSize = 14
-    iconLabel.Font = Enum.Font.GothamBold
+    iconLabel.Font = Enum.Font.SourceSansBold
     iconLabel.TextColor3 = COLORS.textMuted
     iconLabel.Parent = btn
 
@@ -2167,10 +2186,10 @@ local function createMiscFold(parent, title, startExpanded, pageScroll)
     arrow.Size = UDim2.new(0, 24, 1, 0)
     arrow.Position = UDim2.new(1, -32, 0, 0)
     arrow.BackgroundTransparency = 1
-    arrow.Text = "???"
+    arrow.Text = CONST.ICON.foldClosed
     arrow.TextColor3 = COLORS.textMuted
     arrow.TextSize = 14
-    arrow.Font = Enum.Font.GothamBold
+    arrow.Font = Enum.Font.SourceSansBold
     arrow.Active = false
     arrow.Parent = header
 
@@ -2206,7 +2225,7 @@ local function createMiscFold(parent, title, startExpanded, pageScroll)
             end
         end
         expanded = value == true
-        arrow.Text = expanded and "???" or "???"
+        arrow.Text = expanded and CONST.ICON.foldOpen or CONST.ICON.foldClosed
         body.Visible = expanded
         if expanded and pageScroll then
             scrollToVisible(pageScroll, section, 24)
@@ -2236,14 +2255,14 @@ local function createMiscFold(parent, title, startExpanded, pageScroll)
     return section, body, setExpanded
 end
 
-createTab("Home", "???")
-createTab("Scanner", "???")
-createTab("Movement", "???")
-createTab("Premium", "???")
-createTab("Combat", "???")
-createTab("Troll", "???")
-createTab("Misc", "???")
-createTab("Settings", "???")
+createTab("Home", CONST.ICON.tabHome)
+createTab("Scanner", CONST.ICON.tabScanner)
+createTab("Movement", CONST.ICON.tabMovement)
+createTab("Premium", CONST.ICON.tabPremium)
+createTab("Combat", CONST.ICON.tabCombat)
+createTab("Troll", CONST.ICON.tabTroll)
+createTab("Misc", CONST.ICON.tabMisc)
+createTab("Settings", CONST.ICON.tabSettings)
 
 -- Export core helpers for later scope blocks (Luau 200-local limit)
 NF.F.bindConnection = bindConnection
@@ -2409,7 +2428,7 @@ local HomeSubText = Instance.new("TextLabel")
 HomeSubText.Size = UDim2.new(1, -28, 0, 44)
 HomeSubText.Position = UDim2.new(0, 18, 0, 48)
 HomeSubText.BackgroundTransparency = 1
-HomeSubText.Text = "NightFall ??? your favorite scripting hub."
+HomeSubText.Text = "NightFall " .. CONST.ICON.dash .. " your favorite scripting hub."
 HomeSubText.TextColor3 = COLORS.textMuted
 HomeSubText.TextSize = 12
 HomeSubText.Font = Enum.Font.GothamMedium
@@ -3245,7 +3264,7 @@ function NF.F.createPlayerESP(plr, color, isHomelander)
             txt.TextColor3 = color
             txt.TextStrokeTransparency = 0
             txt.TextStrokeColor3 = Color3.new(0, 0, 0)
-            txt.Font = Enum.Font.GothamBold
+            txt.Font = Enum.Font.SourceSansBold
             txt.TextSize = isHomelander and 18 or 16
             txt.Parent = bb
 
@@ -3795,7 +3814,7 @@ local function createDesyncBillboard(adornee, text, textColor, offset, guiParent
     label.Text = text
     label.TextColor3 = textColor
     label.TextStrokeTransparency = 0.35
-    label.Font = Enum.Font.GothamBold
+    label.Font = Enum.Font.SourceSansBold
     label.TextSize = 15
     label.Parent = billboard
 
@@ -5332,7 +5351,7 @@ local function refreshMiscPlayerList()
             local btn = Instance.new("TextButton")
             btn.Size = UDim2.new(1, 0, 0, 36)
             btn.BackgroundColor3 = State.spectateSelected == plr and COLORS.tabActiveBg or COLORS.elevated
-            btn.Text = plr.DisplayName .. "  ?  @" .. plr.Name
+            btn.Text = plr.DisplayName .. "  " .. CONST.ICON.dot .. "  @" .. plr.Name
             btn.TextColor3 = State.spectateSelected == plr and COLORS.accentLight or COLORS.text
             btn.Font = Enum.Font.GothamSemibold
             btn.TextSize = 12
@@ -5400,9 +5419,9 @@ local function createTempVESP(model)
         txt.TextColor3 = Color3.fromRGB(0, 255, 255)
         txt.TextStrokeTransparency = 0
         txt.TextStrokeColor3 = Color3.new(0, 0, 0)
-        txt.Font = Enum.Font.GothamBold
+        txt.Font = Enum.Font.SourceSansBold
         txt.TextSize = 16
-        txt.Text = "??? TempV\n[Calculating...]"
+        txt.Text = CONST.ICON.tempv .. " TempV\n[Calculating...]"
         txt.Parent = bb
 
         State.tempVBillboards[model] = {gui = bb, label = txt}
@@ -5425,7 +5444,7 @@ local function updateTempVESP()
                 local primary = model:FindFirstChildWhichIsA("BasePart")
                 if primary then
                     local dist = (root.Position - primary.Position).Magnitude
-                    data.label.Text = "??? TempV\n???? " .. math.floor(dist) .. " studs"
+                    data.label.Text = CONST.ICON.tempv .. " TempV\n" .. CONST.ICON.dot .. " " .. math.floor(dist) .. " studs"
                 end
             end)
         end
@@ -5611,11 +5630,12 @@ State.scanTempVParts = function()
                     local pos = primary.Position
                     local dist = root and math.floor((root.Position - pos).Magnitude) or "?"
                     
-                    btn.Text = string.format("  TempV #%d\n  [%d, %d, %d]  ?  %s studs",
+                    btn.Text = string.format("  TempV #%d\n  [%d, %d, %d]  %s  %s studs",
                         found + 1,
                         math.floor(pos.X),
                         math.floor(pos.Y),
                         math.floor(pos.Z),
+                        CONST.ICON.dot,
                         tostring(dist)
                     )
 
@@ -6513,9 +6533,9 @@ local function updatePlayerESP()
             pcall(function()
                 local dist = (root.Position - State.firstHomelander.Character.HumanoidRootPart.Position).Magnitude
                 local health = State.firstHomelander.Character:FindFirstChildOfClass("Humanoid")
-                local healthText = health and ("\n?? " .. math.floor(health.Health) .. "/" .. math.floor(health.MaxHealth)) or ""
+                local healthText = health and ("\nHP " .. math.floor(health.Health) .. "/" .. math.floor(health.MaxHealth)) or ""
                 local roleLabel = State.detectedKillerRole or "KILLER"
-                data.label.Text = string.format("???? %s ????\n[%s]\n???? %d studs%s", 
+                data.label.Text = string.format("!! %s !!\n[%s]\n> %d studs%s",
                     State.firstHomelander.Name,
                     roleLabel,
                     math.floor(dist),
@@ -6533,7 +6553,7 @@ local function updatePlayerESP()
                 if data and root then
                     pcall(function()
                         local dist = (root.Position - plr.Character.HumanoidRootPart.Position).Magnitude
-                        data.label.Text = string.format("???? %s\n???? %d studs", 
+                        data.label.Text = string.format("+ %s\n> %d studs",
                             plr.Name, 
                             math.floor(dist)
                         )
