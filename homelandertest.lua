@@ -1,4 +1,4 @@
--- BUILD: 2026-05-27-MOBILE-MOVE-FIX6-dev
+-- BUILD: 2026-05-27-MOBILE-MOVE-FIX7-dev
 -- NightFall TEST BUILD (no key system — use homelandertest.lua or keyless-loader.lua)
 
 local NF = { State = {}, UI = {}, F = {}, COLORS = {}, CONST = {} }
@@ -7575,7 +7575,7 @@ end
 
 end -- scope block 2e (input + loops + wiring)
 
-print("[NightFall] TEST build loaded - 2026-05-27-MOBILE-MOVE-FIX6-dev")
+print("[NightFall] TEST build loaded - 2026-05-27-MOBILE-MOVE-FIX7-dev")
 print("[NightFall] Aimbot: Combat tab - PC hold RMB - Mobile tap LOCK ON")
 if State.isPremium then
     print("[NightFall] A-Train Kill: Premium tab - PC press Q - Mobile tap DASH")
