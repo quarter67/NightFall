@@ -1,4 +1,4 @@
--- BUILD: 2026-05-27-NATIVE-CAM-FIX21-dev
+-- BUILD: 2026-05-27-MOBILE-TOUCH-FIX22-dev
 -- NightFall TEST BUILD (no key system)
 
 local NF = { State = {}, UI = {}, F = {}, COLORS = {}, CONST = {} }
@@ -229,9 +229,7 @@ end
 
 local function isPcShiftLocked()
     if State.isMobile then return false end
-    if State.shiftLockActive then return true end
-    if State.shiftLockSuppressed then return false end
-    return detectGameShiftLock()
+    return State.shiftLockActive == true
 end
 
 local function refreshShiftLockState()
@@ -256,7 +254,15 @@ local function handleShiftLockKeyPress()
         setAimbotShiftCursorLocked(true)
     else
         State.shiftLockSuppressed = true
+        State.nfOwnsShiftLockCursor = false
         setAimbotShiftCursorLocked(false)
+        pcall(function()
+            UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+            UserInputService.MouseIconEnabled = true
+        end)
+        if UI.AimCursor then
+            UI.AimCursor.Visible = false
+        end
     end
 end
 
@@ -595,32 +601,61 @@ local function pointInGui(gui, screenPos)
 end
 
 State.hubClickRegistry = State.hubClickRegistry or {}
+State.hubGlobalLastFireAt = 0
+State.hubGlobalLastFirePos = nil
+
+local function normalizeHubTouchPos(input)
+    return Vector2.new(input.Position.X, input.Position.Y)
+end
 
 local function resolveHubClickAt(pos)
-    local layers = { UI.ScreenGui, UI.ToggleGui }
-    for _, layer in ipairs(layers) do
-        if layer and layer.Parent then
-            local ok, objects = pcall(function()
-                return layer:GetGuiObjectsAtPosition(pos.X, pos.Y)
-            end)
-            if ok and objects then
-                for _, obj in ipairs(objects) do
-                    local cur = obj
-                    while cur and cur ~= layer do
-                        local fireFn = State.hubClickRegistry[cur]
-                        if fireFn then
-                            return fireFn
+    local function resolveInLayer(layer)
+        if not layer or not layer.Parent then return nil end
+        local ok, objects = pcall(function()
+            return layer:GetGuiObjectsAtPosition(pos.X, pos.Y)
+        end)
+        if not ok or not objects then return nil end
+
+        local bestHitFn, bestHitArea = nil, math.huge
+        for _, obj in ipairs(objects) do
+            local cur = obj
+            while cur and cur ~= layer do
+                if cur.Name == "HitLayer" then
+                    local fireFn = State.hubClickRegistry[cur]
+                    if fireFn then
+                        local as = cur.AbsoluteSize
+                        local area = as.X * as.Y
+                        if area > 0 and area < bestHitArea then
+                            bestHitArea = area
+                            bestHitFn = fireFn
                         end
-                        cur = cur.Parent
                     end
                 end
+                if cur:IsA("TextButton") and cur.Name ~= "HitLayer" then
+                    local directFn = State.hubClickRegistry[cur]
+                    if directFn then
+                        local as = cur.AbsoluteSize
+                        local area = as.X * as.Y
+                        if area > 0 and area < bestHitArea then
+                            bestHitArea = area
+                            bestHitFn = directFn
+                        end
+                    end
+                end
+                cur = cur.Parent
             end
         end
+        return bestHitFn
     end
+
+    local fromMain = resolveInLayer(UI.ScreenGui)
+    if fromMain then return fromMain end
+    local fromToggle = resolveInLayer(UI.ToggleGui)
+    if fromToggle then return fromToggle end
 
     local bestFn, bestArea = nil, math.huge
     for guiObj, fireFn in pairs(State.hubClickRegistry) do
-        if guiObj:IsA("GuiObject") and pointInGui(guiObj, pos) then
+        if guiObj.Name == "HitLayer" and pointInGui(guiObj, pos) then
             local as = guiObj.AbsoluteSize
             local area = as.X * as.Y
             if area > 0 and area < bestArea then
@@ -639,27 +674,9 @@ local function ensureHubTouchRouter()
     local touchStarts = {}
     local lastRouterFire = 0
 
-    local function posVariants(input)
-        local x, y = input.Position.X, input.Position.Y
-        local inset = GuiService:GetGuiInset()
-        local mouseOk, mouseLoc = pcall(function()
-            return UserInputService:GetMouseLocation()
-        end)
-        local variants = {
-            Vector2.new(x, y),
-            Vector2.new(x, y + inset.Y),
-            Vector2.new(x, y - inset.Y),
-        }
-        if mouseOk and mouseLoc then
-            table.insert(variants, Vector2.new(mouseLoc.X, mouseLoc.Y))
-            table.insert(variants, Vector2.new(mouseLoc.X, mouseLoc.Y + inset.Y))
-        end
-        return variants
-    end
-
     bindConnection(UserInputService.InputBegan:Connect(function(input)
         if input.UserInputType ~= Enum.UserInputType.Touch then return end
-        touchStarts[input] = Vector2.new(input.Position.X, input.Position.Y)
+        touchStarts[input] = normalizeHubTouchPos(input)
     end))
 
     bindConnection(UserInputService.InputEnded:Connect(function(input)
@@ -668,28 +685,22 @@ local function ensureHubTouchRouter()
         touchStarts[input] = nil
         if not startPos then return end
 
-        local endPos = Vector2.new(input.Position.X, input.Position.Y)
-        if (endPos - startPos).Magnitude > 36 then return end
+        local endPos = normalizeHubTouchPos(input)
+        if (endPos - startPos).Magnitude > 28 then return end
 
         local now = tick()
-        if now - lastRouterFire < 0.12 then return end
-
-        local seen = {}
-        for _, pos in ipairs(posVariants(input)) do
-            local key = math.floor(pos.X) .. ":" .. math.floor(pos.Y)
-            if not seen[key] then
-                seen[key] = true
-                local fireFn = resolveHubClickAt(pos)
-                if fireFn then
-                    lastRouterFire = now
-                    task.defer(fireFn)
-                    return
-                end
-            end
+        if now - lastRouterFire < 0.25 then return end
+        if State.hubGlobalLastFirePos
+            and (endPos - State.hubGlobalLastFirePos).Magnitude < 4
+            and now - State.hubGlobalLastFireAt < 0.25 then
+            return
         end
-        local fireFn = resolveHubClickAt(startPos)
+
+        local fireFn = resolveHubClickAt(endPos) or resolveHubClickAt(startPos)
         if fireFn then
             lastRouterFire = now
+            State.hubGlobalLastFireAt = now
+            State.hubGlobalLastFirePos = endPos
             task.defer(fireFn)
         end
     end))
@@ -698,16 +709,22 @@ end
 local function bindHubClick(btn, fn)
     if not btn or type(fn) ~= "function" then return end
 
-    if not btn:FindFirstChild("HitLayer") and (UserInputService.TouchEnabled or State.isMobile) then
-        addButtonHitLayer(btn)
+    local useTouchRouter = UserInputService.TouchEnabled or State.isMobile
+
+    if useTouchRouter then
+        if not btn:FindFirstChild("HitLayer") then
+            addButtonHitLayer(btn)
+        end
         guiPassThrough(btn)
     end
 
     local lastFire = 0
     local function fire()
         local now = tick()
-        if now - lastFire < 0.15 then return end
+        if now - lastFire < 0.2 then return end
+        if now - State.hubGlobalLastFireAt < 0.2 then return end
         lastFire = now
+        State.hubGlobalLastFireAt = now
         task.defer(fn)
     end
 
@@ -717,7 +734,10 @@ local function bindHubClick(btn, fn)
         State.hubClickRegistry[hit] = fire
     end
 
-    ensureHubTouchRouter()
+    if useTouchRouter then
+        ensureHubTouchRouter()
+        return
+    end
 
     bindConnection(btn.MouseButton1Click:Connect(fire))
     bindConnection(btn.Activated:Connect(fire))
@@ -728,22 +748,10 @@ local function bindHubClick(btn, fn)
         end)
     end
 
-    local function bindTouchTarget(target)
-        if not target then return end
-        bindConnection(target.MouseButton1Click:Connect(fire))
-        bindConnection(target.Activated:Connect(fire))
-        pcall(function()
-            bindConnection(target.TouchTap:Connect(fire))
-        end)
-        bindConnection(target.InputEnded:Connect(function(input)
-            if input.UserInputType == Enum.UserInputType.Touch then
-                fire()
-            end
-        end))
+    if hit then
+        bindConnection(hit.MouseButton1Click:Connect(fire))
+        bindConnection(hit.Activated:Connect(fire))
     end
-
-    bindTouchTarget(btn)
-    bindTouchTarget(hit)
 end
 
 -- Safe root update with error handling
@@ -1961,8 +1969,6 @@ local function createHubButton(parent, title, subtitle)
     guiPassThrough(btn)
     return btn
 end
-
-local function setHubToggle(btn, enabled, onText, offText)
     local state = btn:FindFirstChild("StateLabel")
     local track = btn:FindFirstChild("SwitchTrack")
     local knob = track and track:FindFirstChild("SwitchKnob")
@@ -7656,7 +7662,6 @@ NF.F.runAimbotStep = function(dt)
         return
     end
 
-    refreshShiftLockState()
     syncPcAimHoldState()
 
     if not isAimHoldActive() then
