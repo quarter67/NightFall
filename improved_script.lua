@@ -1,4 +1,4 @@
--- BUILD: 2026-05-27-MOBILE-MOVE-FIX7
+-- BUILD: 2026-05-27-MOBILE-MOVE-FIX8
 -- NightFall production script (loaded via loader.lua - do not share directly)
 
 local NF = { State = {}, UI = {}, F = {}, COLORS = {}, CONST = {} }
@@ -173,21 +173,28 @@ local function refreshCamera()
 end
 
 local function restoreAimbotCamera()
-    if not camera then return end
+    local cam = refreshCamera()
+    if not cam then return end
     pcall(function()
         if State.aimbotSavedCameraType then
-            camera.CameraType = State.aimbotSavedCameraType
-        elseif camera.CameraType == Enum.CameraType.Scriptable then
-            camera.CameraType = Enum.CameraType.Custom
+            cam.CameraType = State.aimbotSavedCameraType
+        elseif cam.CameraType == Enum.CameraType.Scriptable then
+            cam.CameraType = Enum.CameraType.Custom
+        end
+        local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+        if hum then
+            cam.CameraSubject = hum
         end
         if State.isMobile then
-            local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
-            if hum then
-                camera.CameraSubject = hum
-            end
+            pcall(function()
+                player.CameraMinZoomDistance = State.cameraSavedMinZoom or 0.5
+                player.CameraMaxZoomDistance = State.cameraSavedMaxZoom or 400
+            end)
         end
     end)
     State.aimbotSavedCameraType = nil
+    State.mobileAimCamFlatDist = nil
+    State.mobileAimCamHeight = nil
 end
 
 local function isAimHoldActive()
@@ -451,6 +458,15 @@ end
 local function bindConnection(conn)
     table.insert(State.trackedConnections, conn)
     return conn
+end
+
+local function bindHubClick(btn, fn)
+    if not btn or type(fn) ~= "function" then return end
+    if State.isMobile then
+        bindConnection(btn.Activated:Connect(fn))
+    else
+        bindConnection(btn.MouseButton1Click:Connect(fn))
+    end
 end
 
 -- Safe root update with error handling
@@ -1283,6 +1299,7 @@ bindConnection(UI.MobileAimBtn.InputEnded:Connect(function(input)
             State.aimbotLockedHead = nil
             State.aimbotLockExpired = false
             clearMobileAimCameraSnapshot()
+            restoreAimbotCamera()
             tween(UI.MobileAimBtn, { BackgroundColor3 = COLORS.accent })
             UI.MobileAimBtn.Text = "LOCK ON"
         end
@@ -1515,6 +1532,11 @@ local function createTab(name, icon)
     btn.MouseButton1Click:Connect(function()
         switchTab(name)
     end)
+    if State.isMobile then
+        btn.Activated:Connect(function()
+            switchTab(name)
+        end)
+    end
 end
 
 local function createHubButton(parent, title, subtitle)
@@ -2027,6 +2049,7 @@ createTab("Settings", "???")
 
 -- Export core helpers for later scope blocks (Luau 200-local limit)
 NF.F.bindConnection = bindConnection
+NF.F.bindHubClick = bindHubClick
 NF.F.tween = tween
 NF.F.applyCorner = applyCorner
 NF.F.applyStroke = applyStroke
@@ -2072,6 +2095,7 @@ NF.GUI_PARENT = GUI_PARENT
 end -- scope block 0 (core + GUI builders; Luau local register limit)
 
 local bindConnection = NF.F.bindConnection
+local bindHubClick = NF.F.bindHubClick
 local tween = NF.F.tween
 local applyCorner = NF.F.applyCorner
 local applyStroke = NF.F.applyStroke
@@ -2665,17 +2689,17 @@ local function setAimbotTargetPartPreset(partName)
 end
 
 UI.AimbotPartHeadBtn = createHubButton(AimbotBody, "Preset: Head", "Default face-level tracking")
-UI.AimbotPartHeadBtn.MouseButton1Click:Connect(function()
+bindHubClick(UI.AimbotPartHeadBtn, function()
     setAimbotTargetPartPreset("Head")
 end)
 
 UI.AimbotPartHrpBtn = createHubButton(AimbotBody, "Preset: HumanoidRootPart", "Track center mass")
-UI.AimbotPartHrpBtn.MouseButton1Click:Connect(function()
+bindHubClick(UI.AimbotPartHrpBtn, function()
     setAimbotTargetPartPreset("HumanoidRootPart")
 end)
 
 UI.AimbotPartTorsoBtn = createHubButton(AimbotBody, "Preset: UpperTorso", "Track upper body (R15/R6 fallback)")
-UI.AimbotPartTorsoBtn.MouseButton1Click:Connect(function()
+bindHubClick(UI.AimbotPartTorsoBtn, function()
     setAimbotTargetPartPreset("UpperTorso")
 end)
 
@@ -6807,6 +6831,7 @@ local refreshPlayerESPScan = F.refreshPlayerESPScan
 local updateFailsafe = F.updateFailsafe
 local teleportToSafeZone = F.teleportToSafeZone
 local bindConnection = F.bindConnection
+local bindHubClick = F.bindHubClick
 local tween = F.tween
 local refreshCamera = F.refreshCamera
 local restoreAimbotCamera = F.restoreAimbotCamera
@@ -7219,17 +7244,17 @@ ejectScript = function()
     if UI.MobileAimGui then UI.MobileAimGui:Destroy() end
 end
 
-UI.CloseBtn.MouseButton1Click:Connect(function()
+bindHubClick(UI.CloseBtn, function()
     ejectScript()
 end)
 
-UI.HomelanderESPToggle.MouseButton1Click:Connect(function()
+bindHubClick(UI.HomelanderESPToggle, function()
     State.homelanderESPEnabled = not State.homelanderESPEnabled
     setHubToggle(UI.HomelanderESPToggle, State.homelanderESPEnabled)
     refreshPlayerESPScan()
 end)
 
-UI.TeamESPToggle.MouseButton1Click:Connect(function()
+bindHubClick(UI.TeamESPToggle, function()
     State.teamESPEnabled = not State.teamESPEnabled
     setHubToggle(UI.TeamESPToggle, State.teamESPEnabled)
     refreshPlayerESPScan()
@@ -7243,7 +7268,7 @@ UI.TeamESPToggle.MouseButton1Click:Connect(function()
     end
 end)
 
-UI.TempVHighlightToggle.MouseButton1Click:Connect(function()
+bindHubClick(UI.TempVHighlightToggle, function()
     State.tempVHighlightEnabled = not State.tempVHighlightEnabled
     setHubToggle(UI.TempVHighlightToggle, State.tempVHighlightEnabled)
     
@@ -7255,7 +7280,7 @@ UI.TempVHighlightToggle.MouseButton1Click:Connect(function()
     end
 end)
 
-UI.AimbotToggle.MouseButton1Click:Connect(function()
+bindHubClick(UI.AimbotToggle, function()
     State.aimbotEnabled = not State.aimbotEnabled
     setHubToggle(UI.AimbotToggle, State.aimbotEnabled)
     if UI.MobileAimBtn then
@@ -7272,7 +7297,7 @@ UI.AimbotToggle.MouseButton1Click:Connect(function()
     end
 end)
 
-UI.MobileAimDragToggle.MouseButton1Click:Connect(function()
+bindHubClick(UI.MobileAimDragToggle, function()
     State.mobileAimDragUnlocked = not State.mobileAimDragUnlocked
     setHubToggle(UI.MobileAimDragToggle, State.mobileAimDragUnlocked, "UNLOCKED", "LOCKED")
     local subLabel = UI.MobileAimDragToggle:FindFirstChild("SubLabel")
@@ -7296,7 +7321,7 @@ UI.MobileAimDragToggle.MouseButton1Click:Connect(function()
     end
 end)
 
-UI.TeleportHomelanderBtn.MouseButton1Click:Connect(function()
+bindHubClick(UI.TeleportHomelanderBtn, function()
     if State.firstHomelander and State.firstHomelander.Character and State.firstHomelander.Character:FindFirstChild("HumanoidRootPart") and root then
         pcall(function()
             local targetPos = State.firstHomelander.Character.HumanoidRootPart.Position
@@ -7307,11 +7332,11 @@ UI.TeleportHomelanderBtn.MouseButton1Click:Connect(function()
     end
 end)
 
-UI.TeleportSafeZoneBtn.MouseButton1Click:Connect(function()
+bindHubClick(UI.TeleportSafeZoneBtn, function()
     teleportToSafeZone()
 end)
 
-UI.FailsafeToggle.MouseButton1Click:Connect(function()
+bindHubClick(UI.FailsafeToggle, function()
     State.failsafeEnabled = not State.failsafeEnabled
     setHubToggle(UI.FailsafeToggle, State.failsafeEnabled)
     if not State.failsafeEnabled then
@@ -7321,7 +7346,7 @@ UI.FailsafeToggle.MouseButton1Click:Connect(function()
     saveFailsafeSettings()
 end)
 
-UI.AutoRefreshToggle.MouseButton1Click:Connect(function()
+bindHubClick(UI.AutoRefreshToggle, function()
     State.autoRefreshEnabled = not State.autoRefreshEnabled
     setHubToggle(UI.AutoRefreshToggle, State.autoRefreshEnabled)
     UI.StatusScan.StateLabel.Text = State.autoRefreshEnabled and "ON" or "OFF"
@@ -7331,23 +7356,23 @@ UI.AutoRefreshToggle.MouseButton1Click:Connect(function()
     end
 end)
 
-UI.RefreshNowBtn.MouseButton1Click:Connect(function()
+bindHubClick(UI.RefreshNowBtn, function()
     State.scanTempVParts()
 end)
 
-UI.SpeedToggle.MouseButton1Click:Connect(function()
+bindHubClick(UI.SpeedToggle, function()
     State.speedEnabled = not State.speedEnabled
     setHubToggle(UI.SpeedToggle, State.speedEnabled)
     applyMovementStatsNow()
 end)
 
-UI.JumpToggle.MouseButton1Click:Connect(function()
+bindHubClick(UI.JumpToggle, function()
     State.jumpEnabled = not State.jumpEnabled
     setHubToggle(UI.JumpToggle, State.jumpEnabled)
     applyMovementStatsNow()
 end)
 
-UI.FlightToggle.MouseButton1Click:Connect(function()
+bindHubClick(UI.FlightToggle, function()
     State.flightEnabled = not State.flightEnabled
     setHubToggle(UI.FlightToggle, State.flightEnabled)
     if State.flightEnabled then
@@ -7364,33 +7389,33 @@ UI.FlightToggle.MouseButton1Click:Connect(function()
     end
 end)
 
-UI.NoclipToggle.MouseButton1Click:Connect(function()
+bindHubClick(UI.NoclipToggle, function()
     State.noclipEnabled = not State.noclipEnabled
     setHubToggle(UI.NoclipToggle, State.noclipEnabled)
     setNoclip(State.noclipEnabled)
 end)
 
-UI.InfJumpToggle.MouseButton1Click:Connect(function()
+bindHubClick(UI.InfJumpToggle, function()
     State.infJumpEnabled = not State.infJumpEnabled
     setHubToggle(UI.InfJumpToggle, State.infJumpEnabled)
 end)
 
-UI.ResetMovementBtn.MouseButton1Click:Connect(function()
+bindHubClick(UI.ResetMovementBtn, function()
     resetMovementSettings()
 end)
 
-UI.ResetTogglePosBtn.MouseButton1Click:Connect(function()
+bindHubClick(UI.ResetTogglePosBtn, function()
     local defaultPos = UDim2.new(0, 10, 0, 10)
     UI.ToggleCube.Position = defaultPos
     saveTogglePos(defaultPos)
 end)
 
-UI.SwappedMouseToggle.MouseButton1Click:Connect(function()
+bindHubClick(UI.SwappedMouseToggle, function()
     State.swappedMouseButtons = not State.swappedMouseButtons
     setHubToggle(UI.SwappedMouseToggle, State.swappedMouseButtons)
 end)
 
-UI.HideMobileGuiToggle.MouseButton1Click:Connect(function()
+bindHubClick(UI.HideMobileGuiToggle, function()
     applyHideMobileGui(not State.hideMobileGui)
     setHubToggle(UI.HideMobileGuiToggle, State.hideMobileGui)
 end)
@@ -7404,21 +7429,21 @@ do
     end
 end
 
-UI.SpinToggle.MouseButton1Click:Connect(function()
+bindHubClick(UI.SpinToggle, function()
     State.spinEnabled = not State.spinEnabled
     setHubToggle(UI.SpinToggle, State.spinEnabled)
 end)
 
-UI.DesyncToggle.MouseButton1Click:Connect(function()
+bindHubClick(UI.DesyncToggle, function()
     setDesync(not State.desyncEnabled)
     setHubToggle(UI.DesyncToggle, State.desyncEnabled, "ON", "OFF")
 end)
 
-UI.RefreshSpectateListBtn.MouseButton1Click:Connect(function()
+bindHubClick(UI.RefreshSpectateListBtn, function()
     refreshMiscPlayerList()
 end)
 
-UI.SpectateBtn.MouseButton1Click:Connect(function()
+bindHubClick(UI.SpectateBtn, function()
     if State.spectateSelected then
         stopFreecam()
         startSpectate(State.spectateSelected)
@@ -7427,11 +7452,11 @@ UI.SpectateBtn.MouseButton1Click:Connect(function()
     end
 end)
 
-UI.StopSpectateBtn.MouseButton1Click:Connect(function()
+bindHubClick(UI.StopSpectateBtn, function()
     stopSpectate()
 end)
 
-UI.FlingSelectedBtn.MouseButton1Click:Connect(function()
+bindHubClick(UI.FlingSelectedBtn, function()
     if State.spectateSelected then
         task.spawn(function()
             skidFlingPlayer(State.spectateSelected)
@@ -7441,15 +7466,15 @@ UI.FlingSelectedBtn.MouseButton1Click:Connect(function()
     end
 end)
 
-UI.FreecamToggle.MouseButton1Click:Connect(function()
+bindHubClick(UI.FreecamToggle, function()
     setFreecam(not State.freecamEnabled)
 end)
 
-UI.RemoveBloodManipEffectsToggle.MouseButton1Click:Connect(function()
+bindHubClick(UI.RemoveBloodManipEffectsToggle, function()
     setRemoveBloodManipEffects(not State.removeBloodManipEffects)
 end)
 
-UI.BloodManipToggle.MouseButton1Click:Connect(function()
+bindHubClick(UI.BloodManipToggle, function()
     State.bloodManipEnabled = not State.bloodManipEnabled
     setHubToggle(UI.BloodManipToggle, State.bloodManipEnabled)
     if not State.bloodManipEnabled then
@@ -7458,35 +7483,35 @@ UI.BloodManipToggle.MouseButton1Click:Connect(function()
     end
 end)
 
-UI.ATrainKillToggle.MouseButton1Click:Connect(function()
+bindHubClick(UI.ATrainKillToggle, function()
     setATrainKill(not State.aTrainKillEnabled)
 end)
 
-UI.FlingHomelanderBtn.MouseButton1Click:Connect(function()
+bindHubClick(UI.FlingHomelanderBtn, function()
     task.spawn(flingHomelander)
 end)
 
-UI.FlingSelfBtn.MouseButton1Click:Connect(function()
+bindHubClick(UI.FlingSelfBtn, function()
     flingSelf()
 end)
 
-UI.TpRandomBtn.MouseButton1Click:Connect(function()
+bindHubClick(UI.TpRandomBtn, function()
     tpRandomPlayer()
 end)
 
-UI.TpAllToMeBtn.MouseButton1Click:Connect(function()
+bindHubClick(UI.TpAllToMeBtn, function()
     bringPlayersToMe()
 end)
 
-UI.AnnoySoundBtn.MouseButton1Click:Connect(function()
+bindHubClick(UI.AnnoySoundBtn, function()
     playAnnoyingSound()
 end)
 
-UI.ResetTrollBtn.MouseButton1Click:Connect(function()
+bindHubClick(UI.ResetTrollBtn, function()
     resetTrollEffects()
 end)
 
-UI.ClearESPBtn.MouseButton1Click:Connect(function()
+bindHubClick(UI.ClearESPBtn, function()
     -- Clear all player ESP
     for plr, _ in pairs(State.highlights) do
         clearHighlight(plr)
@@ -7578,7 +7603,7 @@ end
 
 end -- scope block 2e (input + loops + wiring)
 
-print("[NightFall] Loaded - build 2026-05-27-MOBILE-MOVE-FIX7")
+print("[NightFall] Loaded - build 2026-05-27-MOBILE-MOVE-FIX8")
 print("[NightFall] Aimbot: Combat tab - PC hold RMB - Mobile tap LOCK ON")
 if State.isPremium then
     print("[NightFall] A-Train Kill: Premium tab - PC press Q - Mobile tap DASH")
