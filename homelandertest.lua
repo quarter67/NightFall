@@ -1,4 +1,4 @@
--- BUILD: 2026-05-27-ESP-RESCAN-FIX16-dev
+-- BUILD: 2026-05-27-CLOSE-BTN-FIX17-dev
 -- NightFall TEST BUILD (no key system)
 
 local NF = { State = {}, UI = {}, F = {}, COLORS = {}, CONST = {} }
@@ -1095,6 +1095,11 @@ local function setMobileOverlayEnabled(enabled)
     end
 end
 
+local function closeHubMenu()
+    setHubVisible(false)
+    setMobileOverlayEnabled(false)
+end
+
 syncMainShadowPosition()
 
 -- Mobile: start slightly inset so the window isn't stuck off-screen before first drag
@@ -1193,10 +1198,19 @@ end
 
 function State.WindowDrag.isOverHeader()
     if not UI.HeaderDrag then return false end
+    local mp = getPointerScreen()
+    if UI.CloseBtn and UI.CloseBtn.Visible then
+        local cb = UI.CloseBtn.AbsolutePosition
+        local cs = UI.CloseBtn.AbsoluteSize
+        if cs.X > 1 and cs.Y > 1
+            and mp.X >= cb.X and mp.X <= cb.X + cs.X
+            and mp.Y >= cb.Y and mp.Y <= cb.Y + cs.Y then
+            return false
+        end
+    end
     local ap = UI.HeaderDrag.AbsolutePosition
     local asz = UI.HeaderDrag.AbsoluteSize
     if asz.X <= 1 or asz.Y <= 1 then return false end
-    local mp = getPointerScreen()
     return mp.X >= ap.X and mp.X <= ap.X + asz.X
         and mp.Y >= ap.Y and mp.Y <= ap.Y + asz.Y
 end
@@ -1402,8 +1416,36 @@ UI.CloseBtn.TextSize = 22
 UI.CloseBtn.Font = Enum.Font.GothamMedium
 UI.CloseBtn.AutoButtonColor = false
 UI.CloseBtn.ZIndex = 20
+UI.CloseBtn.Active = true
+UI.CloseBtn.Selectable = true
 UI.CloseBtn.Parent = Header
 applyCorner(UI.CloseBtn, CONST.RADIUS.sm)
+
+local closeBtnLastFire = 0
+local function fireCloseHubMenu()
+    local now = tick()
+    if now - closeBtnLastFire < 0.15 then return end
+    closeBtnLastFire = now
+    task.defer(closeHubMenu)
+end
+
+if UserInputService.TouchEnabled or State.isMobile then
+    addButtonHitLayer(UI.CloseBtn)
+    State.hubClickRegistry[UI.CloseBtn] = fireCloseHubMenu
+    local closeHit = UI.CloseBtn:FindFirstChild("HitLayer")
+    if closeHit then
+        State.hubClickRegistry[closeHit] = fireCloseHubMenu
+    end
+end
+
+bindConnection(UI.CloseBtn.MouseButton1Click:Connect(fireCloseHubMenu))
+bindConnection(UI.CloseBtn.Activated:Connect(fireCloseHubMenu))
+bindConnection(UI.CloseBtn.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch then
+        fireCloseHubMenu()
+    end
+end))
 
 -- Full-width invisible drag handle (must be AFTER title labels, BEFORE close hit area)
 UI.HeaderDrag = Instance.new("TextButton")
@@ -2343,6 +2385,7 @@ NF.F.scrollToVisible = scrollToVisible
 NF.F.createMiscFold = createMiscFold
 NF.F.setHubVisible = setHubVisible
 NF.F.setMobileOverlayEnabled = setMobileOverlayEnabled
+NF.F.closeHubMenu = closeHubMenu
 NF.F.refreshCamera = refreshCamera
 NF.F.restoreAimbotCamera = restoreAimbotCamera
 NF.F.cameraNeedsAimbotRestore = cameraNeedsAimbotRestore
@@ -7270,6 +7313,7 @@ local enableRobloxMovementControls = F.enableRobloxMovementControls
 local syncPcAimCursorFromSystem = F.syncPcAimCursorFromSystem
 local setHubVisible = F.setHubVisible
 local setMobileOverlayEnabled = F.setMobileOverlayEnabled
+local closeHubMenu = F.closeHubMenu
 local saveAimbotSettings = F.saveAimbotSettings
 
 local ejectScript
@@ -7648,7 +7692,7 @@ ejectScript = function()
     pcall(stopFreecam)
     pcall(resetBloodManipState)
     pcall(stopBloodManipEffectBlock)
-    clearAimbotLock()
+    pcall(clearAimbotLock)
     pcall(function()
         UserInputService.MouseBehavior = Enum.MouseBehavior.Default
     end)
@@ -7695,7 +7739,11 @@ ejectScript = function()
 end
 
 bindHubClick(UI.CloseBtn, function()
-    ejectScript()
+    if closeHubMenu then
+        closeHubMenu()
+    elseif setHubVisible then
+        setHubVisible(false)
+    end
 end)
 
 bindHubClick(UI.HomelanderESPToggle, function()
