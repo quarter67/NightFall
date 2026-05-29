@@ -1,4 +1,4 @@
--- BUILD: 2026-05-27-MOBILE-MOVE-FIX8-dev
+-- BUILD: 2026-05-27-MOBILE-MOVE-FIX10-dev
 -- NightFall TEST BUILD (no key system)
 
 local NF = { State = {}, UI = {}, F = {}, COLORS = {}, CONST = {} }
@@ -41,7 +41,6 @@ local root = nil
 local camera = Workspace.CurrentCamera
 
 local ejectScript
-
 do -- scope block 0 (core + GUI builders; Luau local register limit)
 local function detectMobileDevice()
     if typeof(getgenv) == "function" then
@@ -440,12 +439,73 @@ local function bindConnection(conn)
     return conn
 end
 
+local function guiPassThrough(root)
+    if not root then return end
+    for _, child in ipairs(root:GetDescendants()) do
+        if child:IsA("GuiObject") then
+            child.Active = false
+        end
+    end
+end
+
+local function pointInGui(gui, screenPos)
+    if not gui or not gui.Parent or not gui.Visible then return false end
+    local ap = gui.AbsolutePosition
+    local as = gui.AbsoluteSize
+    if as.X < 2 or as.Y < 2 then return false end
+    return screenPos.X >= ap.X and screenPos.X <= ap.X + as.X
+        and screenPos.Y >= ap.Y and screenPos.Y <= ap.Y + as.Y
+end
+
 local function bindHubClick(btn, fn)
     if not btn or type(fn) ~= "function" then return end
-    if State.isMobile then
-        bindConnection(btn.Activated:Connect(fn))
-    else
-        bindConnection(btn.MouseButton1Click:Connect(fn))
+
+    local lastFire = 0
+    local touchStart = nil
+
+    local function fire()
+        local now = tick()
+        if now - lastFire < 0.18 then return end
+        lastFire = now
+        task.defer(fn)
+    end
+
+    bindConnection(btn.MouseButton1Click:Connect(fire))
+    bindConnection(btn.Activated:Connect(fire))
+
+    if btn:IsA("GuiButton") then
+        pcall(function()
+            bindConnection(btn.TouchTap:Connect(fire))
+        end)
+    end
+
+    bindConnection(btn.InputBegan:Connect(function(input, gameProcessed)
+        if gameProcessed then return end
+        if input.UserInputType == Enum.UserInputType.Touch then
+            touchStart = Vector2.new(input.Position.X, input.Position.Y)
+        end
+    end))
+
+    bindConnection(btn.InputEnded:Connect(function(input)
+        if input.UserInputType ~= Enum.UserInputType.Touch or not touchStart then return end
+        local endPos = Vector2.new(input.Position.X, input.Position.Y)
+        if (endPos - touchStart).Magnitude <= 22 then
+            fire()
+        end
+        touchStart = nil
+    end))
+
+    -- Delta / mobile: ScrollingFrames often swallow Gui events â€” hit-test globally
+    if UserInputService.TouchEnabled then
+        bindConnection(UserInputService.InputEnded:Connect(function(input)
+            if input.UserInputType ~= Enum.UserInputType.Touch then return end
+            if UI.MainFrame and not UI.MainFrame.Visible then return end
+            if not btn.Parent or not btn.Visible then return end
+            local pos = Vector2.new(input.Position.X, input.Position.Y)
+            if pointInGui(btn, pos) then
+                fire()
+            end
+        end))
     end
 end
 
@@ -1461,7 +1521,9 @@ local function createTab(name, icon)
     btn.Size = UDim2.new(1, 0, 0, 40)
     btn.BackgroundColor3 = COLORS.sidebar
     btn.Text = ""
-    btn.AutoButtonColor = false
+    btn.AutoButtonColor = State.isMobile
+    btn.Active = true
+    btn.Selectable = true
     btn.Parent = NavList
     applyCorner(btn, CONST.RADIUS.md)
 
@@ -1509,14 +1571,10 @@ local function createTab(name, icon)
         end
     end)
 
-    btn.MouseButton1Click:Connect(function()
+    bindHubClick(btn, function()
         switchTab(name)
     end)
-    if State.isMobile then
-        btn.Activated:Connect(function()
-            switchTab(name)
-        end)
-    end
+    guiPassThrough(btn)
 end
 
 local function createHubButton(parent, title, subtitle)
@@ -1524,7 +1582,9 @@ local function createHubButton(parent, title, subtitle)
     btn.Size = UDim2.new(1, 0, 0, subtitle and 54 or 46)
     btn.BackgroundColor3 = COLORS.surface
     btn.Text = ""
-    btn.AutoButtonColor = false
+    btn.AutoButtonColor = State.isMobile
+    btn.Active = true
+    btn.Selectable = true
     btn.Parent = parent
     applyCorner(btn, CONST.RADIUS.md)
     applyStroke(btn, COLORS.border, 1, 0.65)
@@ -1592,6 +1652,7 @@ local function createHubButton(parent, title, subtitle)
         tween(btn, { BackgroundColor3 = COLORS.surface })
     end)
 
+    guiPassThrough(btn)
     return btn
 end
 
@@ -1832,7 +1893,7 @@ local function createHubKeybindRow(parent, title, subtitle, getKeyCode, onKeySet
         keyLabel.Text = keyCodeToDisplay(getKeyCode())
         keyLabel.TextColor3 = COLORS.accentOn
     end
-    btn.MouseButton1Click:Connect(function()
+    bindHubClick(btn, function()
         if keyLabel then
             keyLabel.Text = "..."
             keyLabel.TextColor3 = COLORS.textMuted
@@ -1862,6 +1923,7 @@ local function setupMobileScroll(scroll)
         scroll.ScrollBarThickness = 10
         scroll.ScrollBarImageTransparency = 0.25
         scroll.BorderSizePixel = 0
+        scroll.ScrollingEnabled = true
         pcall(function()
             scroll.ElasticBehavior = Enum.ElasticBehavior.WhenScrollable
         end)
@@ -1869,6 +1931,8 @@ local function setupMobileScroll(scroll)
         scroll.Active = true
     end
 end
+
+setupMobileScroll(NavList)
 
 local function scrollToVisible(scroll, element, padding)
     if not scroll or not element then return end
@@ -1916,8 +1980,9 @@ local function createMiscFold(parent, title, startExpanded, pageScroll)
     header.LayoutOrder = 1
     header.BackgroundColor3 = COLORS.surface
     header.Text = ""
-    header.AutoButtonColor = false
+    header.AutoButtonColor = State.isMobile
     header.Active = true
+    header.Selectable = true
     header.ZIndex = 2
     header.Parent = section
     applyCorner(header, CONST.RADIUS.md)
@@ -2002,16 +2067,11 @@ local function createMiscFold(parent, title, startExpanded, pageScroll)
 
     table.insert(miscFoldSetters, setExpanded)
 
-    header.MouseButton1Click:Connect(function()
+    bindHubClick(header, function()
         setExpanded(not expanded)
     end)
 
-    header.MouseEnter:Connect(function()
-        tween(header, { BackgroundColor3 = COLORS.surfaceHover })
-    end)
-    header.MouseLeave:Connect(function()
-        tween(header, { BackgroundColor3 = COLORS.surface })
-    end)
+    guiPassThrough(header)
 
     setExpanded(startExpanded == true)
 
@@ -2153,6 +2213,7 @@ HomeScroll.ScrollBarImageColor3 = COLORS.border
 HomeScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
 HomeScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
 HomeScroll.Parent = HomePage
+setupMobileScroll(HomeScroll)
 
 local HomeScrollLayout = Instance.new("UIListLayout")
 HomeScrollLayout.Padding = UDim.new(0, 12)
@@ -2244,6 +2305,7 @@ ScannerOuterScroll.ScrollBarImageColor3 = COLORS.border
 ScannerOuterScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
 ScannerOuterScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
 ScannerOuterScroll.Parent = ScannerPage
+setupMobileScroll(ScannerOuterScroll)
 
 local ScannerOuterLayout = Instance.new("UIListLayout")
 ScannerOuterLayout.Padding = UDim.new(0, 8)
@@ -2262,6 +2324,7 @@ ScannerScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
 ScannerScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
 ScannerScroll.LayoutOrder = 1
 ScannerScroll.Parent = ScannerOuterScroll
+setupMobileScroll(ScannerScroll)
 applyCorner(ScannerScroll, CONST.RADIUS.lg)
 applyStroke(ScannerScroll, COLORS.border, 1, 0.65)
 
@@ -2317,6 +2380,7 @@ MovementScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
 MovementScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
 MovementScroll.ScrollingDirection = Enum.ScrollingDirection.Y
 MovementScroll.Parent = pages.Movement
+setupMobileScroll(MovementScroll)
 
 local MovementListPad = Instance.new("UIPadding")
 MovementListPad.PaddingTop = UDim.new(0, 4)
@@ -2369,6 +2433,7 @@ PremiumScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
 PremiumScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
 PremiumScroll.ScrollingDirection = Enum.ScrollingDirection.Y
 PremiumScroll.Parent = pages.Premium
+setupMobileScroll(PremiumScroll)
 
 local PremiumListPad = Instance.new("UIPadding")
 PremiumListPad.PaddingTop = UDim.new(0, 4)
@@ -2415,6 +2480,7 @@ CombatScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
 CombatScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
 CombatScroll.ScrollingDirection = Enum.ScrollingDirection.Y
 CombatScroll.Parent = pages.Combat
+setupMobileScroll(CombatScroll)
 
 local CombatListPad = Instance.new("UIPadding")
 CombatListPad.PaddingTop = UDim.new(0, 4)
@@ -2468,6 +2534,7 @@ TrollScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
 TrollScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
 TrollScroll.ScrollingDirection = Enum.ScrollingDirection.Y
 TrollScroll.Parent = pages.Troll
+setupMobileScroll(TrollScroll)
 
 local TrollListPad = Instance.new("UIPadding")
 TrollListPad.PaddingTop = UDim.new(0, 4)
@@ -2752,6 +2819,7 @@ SettingsScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
 SettingsScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
 SettingsScroll.ScrollingDirection = Enum.ScrollingDirection.Y
 SettingsScroll.Parent = pages.Settings
+setupMobileScroll(SettingsScroll)
 
 local SettingsListPad = Instance.new("UIPadding")
 SettingsListPad.PaddingTop = UDim.new(0, 4)
@@ -5067,7 +5135,7 @@ local function refreshMiscPlayerList()
                 end
             end)
 
-            btn.MouseButton1Click:Connect(function()
+            NF.F.bindHubClick(btn, function()
                 State.spectateSelected = plr
                 if UI.SpectateSelectedLabel then
                     UI.SpectateSelectedLabel.Text = "Selected: " .. plr.DisplayName
@@ -5331,7 +5399,7 @@ State.scanTempVParts = function()
                         tostring(dist)
                     )
 
-                    btn.MouseButton1Click:Connect(function()
+                    NF.F.bindHubClick(btn, function()
                         if root and primary and primary.Parent then
                             pcall(function()
                                 root.CFrame = primary.CFrame * CFrame.new(0, 8, 0)
@@ -7270,6 +7338,7 @@ bindHubClick(UI.AimbotToggle, function()
     if not State.aimbotEnabled then
         clearAimbotLock()
         State.holdingMobileAim = false
+        restoreAimbotCamera()
         if UI.MobileAimBtn and not State.mobileAimDragUnlocked then
             UI.MobileAimBtn.Text = "LOCK ON"
             tween(UI.MobileAimBtn, { BackgroundColor3 = COLORS.accent })
@@ -7582,8 +7651,10 @@ if type(NF.F.updateMovementHacks) ~= "function" or type(NF.F.updateTempVESP) ~= 
 end
 
 end -- scope block 2e (input + loops + wiring)
-
-print("[NightFall] Loaded - build 2026-05-27-MOBILE-MOVE-FIX8")
+print("[NightFall] Loaded - build 2026-05-27-MOBILE-MOVE-FIX10-dev")
+if State.isMobile then
+    print("[NightFall] Mobile touch mode — global tap hit-test + TouchTap")
+end
 print("[NightFall] Aimbot: Combat tab - PC hold RMB - Mobile tap LOCK ON")
 if State.isPremium then
     print("[NightFall] A-Train Kill: Premium tab - PC press Q - Mobile tap DASH")
