@@ -1,4 +1,4 @@
--- BUILD: 2026-05-27-MOBILE-MOVE-FIX10-dev
+-- BUILD: 2026-05-27-MOBILE-MOVE-FIX11-dev
 -- NightFall TEST BUILD (no key system)
 
 local NF = { State = {}, UI = {}, F = {}, COLORS = {}, CONST = {} }
@@ -442,32 +442,134 @@ end
 local function guiPassThrough(root)
     if not root then return end
     for _, child in ipairs(root:GetDescendants()) do
-        if child:IsA("GuiObject") then
+        if child:IsA("GuiObject") and child.Name ~= "HitLayer" then
             child.Active = false
         end
     end
 end
 
-local function pointInGui(gui, screenPos)
-    if not gui or not gui.Parent or not gui.Visible then return false end
-    local ap = gui.AbsolutePosition
-    local as = gui.AbsoluteSize
-    if as.X < 2 or as.Y < 2 then return false end
-    return screenPos.X >= ap.X and screenPos.X <= ap.X + as.X
-        and screenPos.Y >= ap.Y and screenPos.Y <= ap.Y + as.Y
+local function passiveContainer(gui)
+    if gui and gui:IsA("GuiObject") and not gui:IsA("GuiButton") and not gui:IsA("ScrollingFrame") then
+        gui.Active = false
+    end
+end
+
+local function addButtonHitLayer(btn)
+    if not btn or btn:FindFirstChild("HitLayer") then return end
+    local hit = Instance.new("TextButton")
+    hit.Name = "HitLayer"
+    hit.Size = UDim2.new(1, 0, 1, 0)
+    hit.BackgroundTransparency = 1
+    hit.Text = ""
+    hit.ZIndex = 50
+    hit.Active = true
+    hit.Selectable = false
+    hit.AutoButtonColor = false
+    hit.Parent = btn
+end
+
+State.hubClickRegistry = State.hubClickRegistry or {}
+
+local function ensureHubTouchRouter()
+    if State.hubTouchRouterReady then return end
+    State.hubTouchRouterReady = true
+
+    local pendingTouch = nil
+    local lastRouterFire = 0
+
+    local function touchPosVariants(input)
+        local x, y = input.Position.X, input.Position.Y
+        local inset = GuiService:GetGuiInset()
+        return {
+            Vector2.new(x, y),
+            Vector2.new(x, y + inset.Y),
+            Vector2.new(x, y - inset.Y),
+        }
+    end
+
+    local function resolveHubClick(pos)
+        local layers = { UI.ScreenGui, UI.ToggleGui }
+        for _, layer in ipairs(layers) do
+            if layer and layer.Parent then
+                local ok, objects = pcall(function()
+                    return layer:GetGuiObjectsAtPosition(pos.X, pos.Y)
+                end)
+                if ok and objects then
+                    for _, obj in ipairs(objects) do
+                        local cur = obj
+                        while cur and cur ~= layer do
+                            local fireFn = State.hubClickRegistry[cur]
+                            if fireFn then
+                                return fireFn
+                            end
+                            cur = cur.Parent
+                        end
+                    end
+                end
+            end
+        end
+        return nil
+    end
+
+    bindConnection(UserInputService.InputBegan:Connect(function(input, gameProcessed)
+        if gameProcessed then return end
+        if input.UserInputType ~= Enum.UserInputType.Touch then return end
+        for _, pos in ipairs(touchPosVariants(input)) do
+            local fireFn = resolveHubClick(pos)
+            if fireFn then
+                pendingTouch = {
+                    fireFn = fireFn,
+                    start = pos,
+                    input = input,
+                }
+                return
+            end
+        end
+    end))
+
+    bindConnection(UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType ~= Enum.UserInputType.Touch or not pendingTouch then return end
+        if pendingTouch.input ~= input then return end
+        local endPos = Vector2.new(input.Position.X, input.Position.Y)
+        if (endPos - pendingTouch.start).Magnitude > 30 then
+            pendingTouch = nil
+            return
+        end
+        local now = tick()
+        if now - lastRouterFire < 0.15 then
+            pendingTouch = nil
+            return
+        end
+        lastRouterFire = now
+        task.defer(pendingTouch.fireFn)
+        pendingTouch = nil
+    end))
 end
 
 local function bindHubClick(btn, fn)
     if not btn or type(fn) ~= "function" then return end
 
-    local lastFire = 0
-    local touchStart = nil
+    if not btn:FindFirstChild("HitLayer") and (UserInputService.TouchEnabled or State.isMobile) then
+        addButtonHitLayer(btn)
+        guiPassThrough(btn)
+    end
 
+    local lastFire = 0
     local function fire()
         local now = tick()
         if now - lastFire < 0.18 then return end
         lastFire = now
         task.defer(fn)
+    end
+
+    State.hubClickRegistry[btn] = fire
+    local hit = btn:FindFirstChild("HitLayer")
+    if hit then
+        State.hubClickRegistry[hit] = fire
+    end
+
+    if UserInputService.TouchEnabled then
+        ensureHubTouchRouter()
     end
 
     bindConnection(btn.MouseButton1Click:Connect(fire))
@@ -479,33 +581,13 @@ local function bindHubClick(btn, fn)
         end)
     end
 
-    bindConnection(btn.InputBegan:Connect(function(input, gameProcessed)
-        if gameProcessed then return end
-        if input.UserInputType == Enum.UserInputType.Touch then
-            touchStart = Vector2.new(input.Position.X, input.Position.Y)
-        end
-    end))
-
-    bindConnection(btn.InputEnded:Connect(function(input)
-        if input.UserInputType ~= Enum.UserInputType.Touch or not touchStart then return end
-        local endPos = Vector2.new(input.Position.X, input.Position.Y)
-        if (endPos - touchStart).Magnitude <= 22 then
-            fire()
-        end
-        touchStart = nil
-    end))
-
-    -- Delta / mobile: ScrollingFrames often swallow Gui events â€” hit-test globally
-    if UserInputService.TouchEnabled then
-        bindConnection(UserInputService.InputEnded:Connect(function(input)
-            if input.UserInputType ~= Enum.UserInputType.Touch then return end
-            if UI.MainFrame and not UI.MainFrame.Visible then return end
-            if not btn.Parent or not btn.Visible then return end
-            local pos = Vector2.new(input.Position.X, input.Position.Y)
-            if pointInGui(btn, pos) then
-                fire()
-            end
-        end))
+    local hitLayer = btn:FindFirstChild("HitLayer")
+    if hitLayer and hitLayer:IsA("GuiButton") then
+        bindConnection(hitLayer.MouseButton1Click:Connect(fire))
+        bindConnection(hitLayer.Activated:Connect(fire))
+        pcall(function()
+            bindConnection(hitLayer.TouchTap:Connect(fire))
+        end)
     end
 end
 
@@ -802,6 +884,7 @@ MainFrame.BackgroundTransparency = 1
 MainFrame.BorderSizePixel = 0
 MainFrame.ClipsDescendants = false
 MainFrame.ZIndex = 2
+MainFrame.Active = false
 MainFrame.Parent = ScreenGui
 UI.MainFrame = MainFrame
 
@@ -1436,6 +1519,7 @@ Sidebar.Position = UDim2.new(0, 0, 0, 52)
 Sidebar.BackgroundColor3 = COLORS.sidebar
 Sidebar.BorderSizePixel = 0
 Sidebar.ZIndex = 2
+Sidebar.Active = false
 Sidebar.Parent = MainFrame
 applyCorner(Sidebar, CONST.RADIUS.xl)
 
@@ -1472,6 +1556,7 @@ Content.BackgroundTransparency = 0
 Content.BorderSizePixel = 0
 Content.ClipsDescendants = true
 Content.ZIndex = 2
+Content.Active = false
 Content.Parent = MainFrame
 applyCorner(Content, CONST.RADIUS.xl)
 
@@ -1486,6 +1571,7 @@ local function createPage(name)
     page.Size = UDim2.new(1, 0, 1, 0)
     page.BackgroundTransparency = 1
     page.Visible = false
+    page.Active = false
     page.Parent = Content
     pages[name] = page
     return page
@@ -1571,6 +1657,7 @@ local function createTab(name, icon)
         end
     end)
 
+    addButtonHitLayer(btn)
     bindHubClick(btn, function()
         switchTab(name)
     end)
@@ -1652,6 +1739,7 @@ local function createHubButton(parent, title, subtitle)
         tween(btn, { BackgroundColor3 = COLORS.surface })
     end)
 
+    addButtonHitLayer(btn)
     guiPassThrough(btn)
     return btn
 end
@@ -2067,6 +2155,7 @@ local function createMiscFold(parent, title, startExpanded, pageScroll)
 
     table.insert(miscFoldSetters, setExpanded)
 
+    addButtonHitLayer(header)
     bindHubClick(header, function()
         setExpanded(not expanded)
     end)
@@ -2265,6 +2354,7 @@ HomeList.Size = UDim2.new(1, 0, 0, 0)
 HomeList.AutomaticSize = Enum.AutomaticSize.Y
 HomeList.BackgroundTransparency = 1
 HomeList.LayoutOrder = 2
+HomeList.Active = false
 HomeList.Parent = HomeScroll
 
 local HomeListLayout = Instance.new("UIListLayout")
@@ -2392,6 +2482,7 @@ local MovementList = Instance.new("Frame")
 MovementList.Size = UDim2.new(1, 0, 0, 0)
 MovementList.AutomaticSize = Enum.AutomaticSize.Y
 MovementList.BackgroundTransparency = 1
+MovementList.Active = false
 MovementList.Parent = MovementScroll
 
 local MovementLayout = Instance.new("UIListLayout")
@@ -2445,6 +2536,7 @@ local PremiumList = Instance.new("Frame")
 PremiumList.Size = UDim2.new(1, 0, 0, 0)
 PremiumList.AutomaticSize = Enum.AutomaticSize.Y
 PremiumList.BackgroundTransparency = 1
+PremiumList.Active = false
 PremiumList.Parent = PremiumScroll
 
 local PremiumLayout = Instance.new("UIListLayout")
@@ -2492,6 +2584,7 @@ local CombatList = Instance.new("Frame")
 CombatList.Size = UDim2.new(1, 0, 0, 0)
 CombatList.AutomaticSize = Enum.AutomaticSize.Y
 CombatList.BackgroundTransparency = 1
+CombatList.Active = false
 CombatList.Parent = CombatScroll
 
 local CombatLayout = Instance.new("UIListLayout")
@@ -2546,6 +2639,7 @@ local TrollList = Instance.new("Frame")
 TrollList.Size = UDim2.new(1, 0, 0, 0)
 TrollList.AutomaticSize = Enum.AutomaticSize.Y
 TrollList.BackgroundTransparency = 1
+TrollList.Active = false
 TrollList.Parent = TrollScroll
 
 local TrollLayout = Instance.new("UIListLayout")
@@ -2586,6 +2680,7 @@ MiscContent.Size = UDim2.new(1, 0, 0, 0)
 MiscContent.AutomaticSize = Enum.AutomaticSize.Y
 MiscContent.BackgroundTransparency = 1
 MiscContent.ClipsDescendants = true
+MiscContent.Active = false
 MiscContent.Parent = MiscScroll
 
 local MiscListPad = Instance.new("UIPadding")
@@ -2831,6 +2926,7 @@ local SettingsList = Instance.new("Frame")
 SettingsList.Size = UDim2.new(1, 0, 0, 0)
 SettingsList.AutomaticSize = Enum.AutomaticSize.Y
 SettingsList.BackgroundTransparency = 1
+SettingsList.Active = false
 SettingsList.Parent = SettingsScroll
 
 local SettingsLayout = Instance.new("UIListLayout")
@@ -7651,9 +7747,9 @@ if type(NF.F.updateMovementHacks) ~= "function" or type(NF.F.updateTempVESP) ~= 
 end
 
 end -- scope block 2e (input + loops + wiring)
-print("[NightFall] Loaded - build 2026-05-27-MOBILE-MOVE-FIX10-dev")
+print("[NightFall] Loaded - build 2026-05-27-MOBILE-MOVE-FIX11-dev")
 if State.isMobile then
-    print("[NightFall] Mobile touch mode — global tap hit-test + TouchTap")
+    print("[NightFall] Mobile touch router active (GetGuiObjectsAtPosition + HitLayer)")
 end
 print("[NightFall] Aimbot: Combat tab - PC hold RMB - Mobile tap LOCK ON")
 if State.isPremium then
