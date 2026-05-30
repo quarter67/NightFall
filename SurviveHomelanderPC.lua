@@ -1,5 +1,5 @@
 -- SurviveHomelanderPC
--- BUILD: 2026-05-27-PC-KEY-SYNC24
+-- BUILD: 2026-05-27-PC-KEY-SYNC27
 -- Standalone PC build (premium via loader key; keyless if NF_KEYLESS is set)
 
 if typeof(getgenv) == "function" then
@@ -115,7 +115,7 @@ end
 local GUI_PARENT = resolveGuiParent()
 
 local function dismissNightFallLoaderUi()
-    local targets = { "NightFallLoaderOverlay", "NightFallKeyUI" }
+    local targets = { "NightFallLoaderOverlay", "NightFallKeyUI", "NightFallPCKeyUI" }
     local parents = {}
     if player then
         local pg = player:FindFirstChild("PlayerGui")
@@ -338,7 +338,7 @@ local function isRobloxCameraDragging()
 end
 
 local function ensurePcAimMouseFree()
-    -- Only unlock the mouse for aimbot while actively holding aim ? never override Roblox camera drag.
+    -- Only unlock the mouse for aimbot while actively holding aim - never override Roblox camera drag.
     if State.isMobile or not State.aimbotEnabled or not isAimHoldActive() then return end
     if isPcShiftLocked() or isRobloxCameraDragging() then return end
     pcall(function()
@@ -500,24 +500,24 @@ COLORS.toggleOn = Color3.fromRGB(99, 102, 241)
 CONST.RADIUS = { sm = 6, md = 10, lg = 14, xl = 20, full = 999 }
 CONST.SIDEBAR_WIDTH = 132
 
--- UTF-8 icons via string.char (survives file encoding; use SourceSansBold to render)
+-- ASCII-safe icons (UTF-8 emoji show as ??? in Roblox Gotham on many executors)
 CONST.ICON = {
-    tabHome = string.char(226, 140, 130),       -- ?
-    tabScanner = string.char(226, 151, 137),    -- ?
-    tabMovement = string.char(226, 134, 151),   -- ?
-    tabPremium = string.char(226, 152, 133),    -- ?
-    tabCombat = string.char(226, 154, 161),     -- ?
-    tabTroll = string.char(226, 152, 160),    -- ?
-    tabMisc = string.char(226, 151, 148),       -- ?
-    tabSettings = string.char(226, 154, 153),   -- ?
-    foldClosed = string.char(226, 150, 184),    -- ?
-    foldOpen = string.char(226, 150, 190),     -- ?
-    close = string.char(195, 151),              -- ?
-    flightUp = string.char(226, 134, 145),      -- ?
-    flightDown = string.char(226, 134, 147),    -- ?
-    tempv = string.char(226, 154, 161),         -- ?
-    dot = string.char(194, 183),                -- ?
-    dash = string.char(226, 128, 148),          -- ?
+    tabHome = "H",
+    tabScanner = "S",
+    tabMovement = "M",
+    tabPremium = "P",
+    tabCombat = "C",
+    tabTroll = "T",
+    tabMisc = "B",
+    tabSettings = "G",
+    foldClosed = "+",
+    foldOpen = "-",
+    close = "X",
+    flightUp = "^",
+    flightDown = "v",
+    tempv = "*",
+    dot = "-",
+    dash = "-",
 }
 
 local function tween(instance, props, duration)
@@ -1427,7 +1427,7 @@ UI.CloseBtn = Instance.new("TextButton")
 UI.CloseBtn.Size = UDim2.new(0, 32, 0, 32)
 UI.CloseBtn.Position = UDim2.new(1, -44, 0.5, -16)
 UI.CloseBtn.BackgroundColor3 = COLORS.surface
-UI.CloseBtn.Text = CONST.ICON.close
+UI.CloseBtn.Text = "X"
 UI.CloseBtn.TextColor3 = COLORS.textMuted
 UI.CloseBtn.TextSize = 22
 UI.CloseBtn.Font = Enum.Font.GothamMedium
@@ -1443,16 +1443,19 @@ local function fireCloseHubMenu()
     local now = tick()
     if now - closeBtnLastFire < 0.15 then return end
     closeBtnLastFire = now
-    task.defer(closeHubMenu)
+    setHubVisible(false)
+    setMobileOverlayEnabled(false)
 end
 
-if UserInputService.TouchEnabled or State.isMobile then
-    addButtonHitLayer(UI.CloseBtn)
-    State.hubClickRegistry[UI.CloseBtn] = fireCloseHubMenu
-    local closeHit = UI.CloseBtn:FindFirstChild("HitLayer")
-    if closeHit then
-        State.hubClickRegistry[closeHit] = fireCloseHubMenu
-    end
+addButtonHitLayer(UI.CloseBtn)
+UI.CloseBtn.Active = true
+State.hubClickRegistry[UI.CloseBtn] = fireCloseHubMenu
+local closeHit = UI.CloseBtn:FindFirstChild("HitLayer")
+if closeHit then
+    closeHit.Active = true
+    State.hubClickRegistry[closeHit] = fireCloseHubMenu
+    bindConnection(closeHit.MouseButton1Click:Connect(fireCloseHubMenu))
+    bindConnection(closeHit.Activated:Connect(fireCloseHubMenu))
 end
 
 bindConnection(UI.CloseBtn.MouseButton1Click:Connect(fireCloseHubMenu))
@@ -1822,18 +1825,15 @@ local function createTab(name, icon)
     applyCorner(indicator, 2)
 
     local iconLabel = Instance.new("TextLabel")
-    iconLabel.Size = UDim2.new(0, 20, 1, 0)
-    iconLabel.Position = UDim2.new(0, 14, 0, 0)
+    iconLabel.Size = UDim2.new(0, 0, 1, 0)
+    iconLabel.Visible = false
     iconLabel.BackgroundTransparency = 1
-    iconLabel.Text = icon
-    iconLabel.TextSize = 14
-    iconLabel.Font = Enum.Font.SourceSansBold
-    iconLabel.TextColor3 = COLORS.textMuted
+    iconLabel.Text = ""
     iconLabel.Parent = btn
 
     local textLabel = Instance.new("TextLabel")
-    textLabel.Size = UDim2.new(1, -38, 1, 0)
-    textLabel.Position = UDim2.new(0, 36, 0, 0)
+    textLabel.Size = UDim2.new(1, -28, 1, 0)
+    textLabel.Position = UDim2.new(0, 14, 0, 0)
     textLabel.BackgroundTransparency = 1
     textLabel.Text = name
     textLabel.TextSize = 13
@@ -2479,7 +2479,7 @@ local tabButtons = NF.tabButtons
 local miscFoldSetters = NF.miscFoldSetters
 local GUI_PARENT = NF.GUI_PARENT
 
-do -- scope block 1a-home (GUI ? Luau local register limit)
+do -- scope block 1a-home (GUI - Luau local register limit)
 
 local HomePage = createPage("Home")
 local ScannerPage = createPage("Scanner")
@@ -2668,9 +2668,9 @@ setHubToggle(UI.TempVHighlightToggle, false)
 
 UI.RefreshNowBtn = createHubButton(ScannerControls, "Refresh Scanner", "Scan workspace now")
 
-end -- scope block 1a-home (GUI ? Luau local register limit)
+end -- scope block 1a-home (GUI - Luau local register limit)
 
-do -- scope block 1a-move (GUI ? Luau local register limit)
+do -- scope block 1a-move (GUI - Luau local register limit)
 
 local MovementScroll = Instance.new("ScrollingFrame")
 MovementScroll.Size = UDim2.new(1, 0, 1, 0)
@@ -2769,13 +2769,26 @@ end
 UI.ATrainKillToggle = createHubButton(
     PremiumList,
     "A-Train Kill",
-    "PC: enable + press Q ? Mobile: enable + tap in-game DASH"
+    "PC: enable + press Q - Mobile: enable + tap in-game DASH"
 )
 setHubToggle(UI.ATrainKillToggle, false)
 UI.ATrainKillToggle.Visible = State.isPremium
 bindHubClick(UI.ATrainKillToggle, function()
     if NF.F.setATrainKill then
         NF.F.setATrainKill(not State.aTrainKillEnabled)
+    end
+end)
+
+UI.HomelanderAutowinToggle = createHubButton(
+    PremiumList,
+    "Homelander Autowin",
+    "Auto TP behind players and choke (E) until they die - needs Homelander role"
+)
+setHubToggle(UI.HomelanderAutowinToggle, false)
+UI.HomelanderAutowinToggle.Visible = State.isPremium
+bindHubClick(UI.HomelanderAutowinToggle, function()
+    if NF.F.setHomelanderAutowin then
+        NF.F.setHomelanderAutowin(not State.homelanderAutowinEnabled)
     end
 end)
 
@@ -2808,13 +2821,13 @@ local CombatLayout = Instance.new("UIListLayout")
 CombatLayout.Padding = UDim.new(0, 8)
 CombatLayout.Parent = CombatList
 
-UI.HomelanderESPToggle = createHubButton(CombatList, "Killer ESP", "Homelander & Stormfront ? rescans every 3s")
+UI.HomelanderESPToggle = createHubButton(CombatList, "Killer ESP", "Homelander & Stormfront - rescans every 3s")
 setHubToggle(UI.HomelanderESPToggle, false)
 
 UI.TeamESPToggle = createHubButton(CombatList, "Team ESP", "Rescans players every 3 seconds")
 setHubToggle(UI.TeamESPToggle, false)
 
-UI.AimbotToggle = createHubButton(CombatList, "Aimbot", "Enable ? PC hold RMB to lock ? Mobile tap LOCK ON")
+UI.AimbotToggle = createHubButton(CombatList, "Aimbot", "Enable - PC hold RMB to lock - Mobile tap LOCK ON")
 setHubToggle(UI.AimbotToggle, false)
 
 UI.MobileAimDragToggle = createHubButton(CombatList, "Unlock LOCK ON Button", "Drag the LOCK ON button to reposition it")
@@ -2827,7 +2840,7 @@ UI.TeleportSafeZoneBtn = createHubButton(CombatList, "Teleport To Safe Zone", "I
 
 UI.ClearESPBtn = createHubButton(CombatList, "Clear All ESP", "Remove highlights & billboards")
 
-UI.BloodManipToggle = createHubButton(CombatList, "Blood Manipulator Kill", "Hold E on head ? stays locked until release")
+UI.BloodManipToggle = createHubButton(CombatList, "Blood Manipulator Kill", "Hold E on head - stays locked until release")
 setHubToggle(UI.BloodManipToggle, false)
 bindHubClick(UI.BloodManipToggle, function()
     State.bloodManipEnabled = not State.bloodManipEnabled
@@ -2838,9 +2851,9 @@ bindHubClick(UI.BloodManipToggle, function()
     end
 end)
 
-end -- scope block 1a-move (GUI ? Luau local register limit)
+end -- scope block 1a-move (GUI - Luau local register limit)
 
-do -- scope block 1a-misc (GUI ? Luau local register limit)
+do -- scope block 1a-misc (GUI - Luau local register limit)
 
 local TrollScroll = Instance.new("ScrollingFrame")
 TrollScroll.Size = UDim2.new(1, 0, 1, 0)
@@ -2878,7 +2891,7 @@ bindHubClick(UI.SpinToggle, function()
     setHubToggle(UI.SpinToggle, State.spinEnabled)
 end)
 
-UI.DesyncToggle = createHubButton(TrollList, "Desync", "Server marker + client label ? hold E to interact")
+UI.DesyncToggle = createHubButton(TrollList, "Desync", "Server marker + client label - hold E to interact")
 setHubToggle(UI.DesyncToggle, false)
 bindHubClick(UI.DesyncToggle, function()
     if NF.F.setDesync then
@@ -2887,7 +2900,7 @@ bindHubClick(UI.DesyncToggle, function()
     end
 end)
 
-UI.FlingHomelanderBtn = createHubButton(TrollList, "Fling Homelander", "SkidFling overlap ? needs collision")
+UI.FlingHomelanderBtn = createHubButton(TrollList, "Fling Homelander", "SkidFling overlap - needs collision")
 bindHubClick(UI.FlingHomelanderBtn, function()
     if NF.F.flingHomelander then task.spawn(NF.F.flingHomelander) end
 end)
@@ -2947,7 +2960,7 @@ local _, SpectateBody = createMiscFold(MiscContent, "Spectate", State.isMobile, 
 local MiscSubLabel = Instance.new("TextLabel")
 MiscSubLabel.Size = UDim2.new(1, 0, 0, 18)
 MiscSubLabel.BackgroundTransparency = 1
-MiscSubLabel.Text = "Select a player below ? spectate or fling"
+MiscSubLabel.Text = "Select a player below - spectate or fling"
 MiscSubLabel.TextColor3 = COLORS.textMuted
 MiscSubLabel.TextSize = 12
 MiscSubLabel.Font = Enum.Font.GothamMedium
@@ -3001,7 +3014,7 @@ bindHubClick(UI.RefreshSpectateListBtn, function()
     if NF.F.refreshMiscPlayerList then NF.F.refreshMiscPlayerList() end
 end)
 
-UI.SpectateBtn = createHubButton(SpectateBody, "Spectate", "Right-drag orbit ? scroll zoom")
+UI.SpectateBtn = createHubButton(SpectateBody, "Spectate", "Right-drag orbit - scroll zoom")
 bindHubClick(UI.SpectateBtn, function()
     if State.spectateSelected then
         if NF.F.stopFreecam then NF.F.stopFreecam() end
@@ -3018,7 +3031,7 @@ end)
 
 local _, FlingBody = createMiscFold(MiscContent, "Fling", false, MiscScroll)
 
-UI.FlingSelectedBtn = createHubButton(FlingBody, "Fling Selected", "SkidFling ? turn off noclip/desync first")
+UI.FlingSelectedBtn = createHubButton(FlingBody, "Fling Selected", "SkidFling - turn off noclip/desync first")
 bindHubClick(UI.FlingSelectedBtn, function()
     if State.spectateSelected and NF.F.skidFlingPlayer then
         task.spawn(function()
@@ -3031,7 +3044,7 @@ end)
 
 local _, FreecamBody = createMiscFold(MiscContent, "Freecam", false, MiscScroll)
 
-UI.FreecamToggle = createHubButton(FreecamBody, "Freecam", "WASD move ? right-drag look ? scroll speed")
+UI.FreecamToggle = createHubButton(FreecamBody, "Freecam", "WASD move - right-drag look - scroll speed")
 setHubToggle(UI.FreecamToggle, false)
 bindHubClick(UI.FreecamToggle, function()
     if NF.F.setFreecam then NF.F.setFreecam(not State.freecamEnabled) end
@@ -3067,7 +3080,7 @@ local _, AimbotBody = createMiscFold(MiscContent, "Aimbot", false, MiscScroll)
 local AimbotDesc = Instance.new("TextLabel")
 AimbotDesc.Size = UDim2.new(1, 0, 0, 32)
 AimbotDesc.BackgroundTransparency = 1
-AimbotDesc.Text = "Enable Aimbot ? PC hold RMB ? set shift lock key below ? delay 0 = fast"
+AimbotDesc.Text = "Enable Aimbot - PC hold RMB - set shift lock key below - delay 0 = fast"
 AimbotDesc.TextColor3 = COLORS.textMuted
 AimbotDesc.TextSize = 11
 AimbotDesc.Font = Enum.Font.GothamMedium
@@ -3130,7 +3143,7 @@ end)
 UI.ShiftLockKeyBtn = createHubKeybindRow(
     AimbotBody,
     "Shift Lock Key",
-    "Click then press a key ? toggles shift lock mode for aimbot",
+    "Click then press a key - toggles shift lock mode for aimbot",
     function()
         return State.shiftLockKey
     end,
@@ -3145,7 +3158,7 @@ local _, FailsafeBody = createMiscFold(MiscContent, "Failsafe", false, MiscScrol
 local FailsafeDesc = Instance.new("TextLabel")
 FailsafeDesc.Size = UDim2.new(1, 0, 0, 32)
 FailsafeDesc.BackgroundTransparency = 1
-FailsafeDesc.Text = "TP to safe zone when HP drops below threshold ? TP back when you heal above it."
+FailsafeDesc.Text = "TP to safe zone when HP drops below threshold - TP back when you heal above it."
 FailsafeDesc.TextColor3 = COLORS.textMuted
 FailsafeDesc.TextSize = 11
 FailsafeDesc.Font = Enum.Font.GothamMedium
@@ -3268,9 +3281,9 @@ setHubToggle(UI.HideMobileGuiToggle, false)
 
 switchTab("Home")
 
-end -- scope block 1a-misc (GUI ? Luau local register limit)
+end -- scope block 1a-misc (GUI - Luau local register limit)
 
-do -- scope block 1b (homelander detect ? Luau local register limit)
+do -- scope block 1b (homelander detect - Luau local register limit)
 
 State.autoRefreshEnabled = true
 State.homelanderESPEnabled = false
@@ -3287,6 +3300,12 @@ State.aTrainKillExecuting = false
 State.aTrainDashHooked = {}
 State.aTrainLastDashTrigger = 0
 State.aTrainDashScanConn = nil
+
+State.homelanderAutowinEnabled = false
+State.homelanderAutowinRunning = false
+State.homelanderAutowinTarget = nil
+State.homelanderAutowinHoldActive = false
+State.homelanderAutowinLastE = 0
 State.tempVRecentUntil = {}
 
 State.spinEnabled = false
@@ -3776,7 +3795,7 @@ function NF.F.setHomelanderTarget(newTarget)
     State.firstHomelander = newTarget
 
     if State.firstHomelander then
-        UI.StatusHomelander.StateLabel.Text = (State.detectedKillerRole or "KILLER") .. " ? " .. State.firstHomelander.Name:upper()
+        UI.StatusHomelander.StateLabel.Text = (State.detectedKillerRole or "KILLER") .. " - " .. State.firstHomelander.Name:upper()
         UI.StatusHomelander.StateLabel.TextColor3 = COLORS.danger
     else
         UI.StatusHomelander.StateLabel.Text = "NONE"
@@ -3802,9 +3821,9 @@ NF.F.getHumanoid = getHumanoid
 NF.F.getRoot = getRoot
 NF.F.setHubToggle = setHubToggle
 
-end -- scope block 1b (homelander detect ? Luau local register limit)
+end -- scope block 1b (homelander detect - Luau local register limit)
 
-do -- scope block 1e (desync + movement ? Luau local register limit)
+do -- scope block 1e (desync + movement - Luau local register limit)
 
 local A = NF.F
 local getRoot = A.getRoot
@@ -4688,9 +4707,9 @@ NF.F.applyMovementStatsNow = applyMovementStatsNow
 NF.F.stopFlight = stopFlight
 NF.F.removeFlightPhysics = removeFlightPhysics
 
-end -- scope block 1e (desync + movement ? Luau local register limit)
+end -- scope block 1e (desync + movement - Luau local register limit)
 
-do -- scope block 1d (fling/troll ? Luau local register limit)
+do -- scope block 1d (fling/troll - Luau local register limit)
 
 local A = NF.F
 local getRoot = A.getRoot
@@ -5099,9 +5118,9 @@ NF.F.tpRandomPlayer = tpRandomPlayer
 NF.F.playAnnoyingSound = playAnnoyingSound
 NF.F.resetTrollEffects = resetTrollEffects
 
-end -- scope block 1d (fling/troll ? Luau local register limit)
+end -- scope block 1d (fling/troll - Luau local register limit)
 
-do -- scope block 1d-atrain (A-Train kill ? Luau local register limit)
+do -- scope block 1d-atrain (A-Train kill - Luau local register limit)
 
 local getRoot = NF.F.getRoot
 local isOtherPlayer = NF.F.isOtherPlayer
@@ -5309,9 +5328,308 @@ NF.F.setATrainKill = setATrainKill
 NF.F.executeATrainKill = executeATrainKill
 NF.F.startATrainDashHooks = startATrainDashHooks
 
-end -- scope block 1d-atrain (A-Train kill ? Luau local register limit)
+end -- scope block 1d-atrain (A-Train kill - Luau local register limit)
 
-do -- scope block 1c (spectate ? Luau local register limit)
+do -- scope block 1d-autowin (Homelander Autowin - Luau local register limit)
+
+local getRoot = NF.F.getRoot
+local isOtherPlayer = NF.F.isOtherPlayer
+local isPlayerHomelander = NF.F.isPlayerHomelander
+local setHubToggle = NF.F.setHubToggle
+
+local AUTOWIN_BEHIND_OFFSET = 2.5
+local AUTOWIN_E_INTERVAL = 0.5
+local AUTOWIN_MAX_TARGET_SEC = 50
+local AUTOWIN_BETWEEN_TARGETS = 0.4
+
+local VirtualInputManager = game:GetService("VirtualInputManager")
+
+local function teleportHrpTo(hrp, cf)
+    if not hrp or not cf then return end
+    pcall(function()
+        hrp.CFrame = cf
+        hrp.AssemblyLinearVelocity = Vector3.zero
+        hrp.AssemblyAngularVelocity = Vector3.zero
+        hrp.Velocity = Vector3.zero
+        hrp.RotVelocity = Vector3.zero
+    end)
+end
+
+local function getBehindTargetCFrame(targetHrp)
+    if not targetHrp then return nil end
+    return CFrame.new(
+        targetHrp.Position - targetHrp.CFrame.LookVector * AUTOWIN_BEHIND_OFFSET,
+        targetHrp.Position
+    )
+end
+
+local function isAlivePlayer(plr)
+    if not isOtherPlayer(plr) then return false end
+    local character = plr.Character
+    if not character then return false end
+    local hrp = character:FindFirstChild("HumanoidRootPart")
+    local hum = character:FindFirstChildOfClass("Humanoid")
+    return hrp and hum and hum.Health > 0
+end
+
+local function isTempVRecentlyTaken(plr)
+    local untilTick = State.tempVRecentUntil and State.tempVRecentUntil[plr]
+    return untilTick ~= nil and tick() < untilTick
+end
+
+local function collectAutowinCandidates()
+    local candidates = {}
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if isAlivePlayer(plr)
+            and not isPlayerHomelander(plr)
+            and not isTempVRecentlyTaken(plr) then
+            table.insert(candidates, plr)
+        end
+    end
+    table.sort(candidates, function(a, b)
+        return a.Name:lower() < b.Name:lower()
+    end)
+    return candidates
+end
+
+local function simulateKeyE(down)
+    pcall(function()
+        if VirtualInputManager and VirtualInputManager.SendKeyEvent then
+            VirtualInputManager:SendKeyEvent(down, Enum.KeyCode.E, false, game)
+        end
+    end)
+end
+
+local function simulateKeyEClick()
+    simulateKeyE(true)
+    task.defer(function()
+        simulateKeyE(false)
+    end)
+end
+
+local function tryChokeInteract(myHrp, targetChar)
+    if not myHrp or not targetChar then return end
+
+    pcall(function()
+        if fireproximityprompt then
+            local function firePrompt(desc)
+                if desc:IsA("ProximityPrompt") and desc.Enabled then
+                    pcall(function() fireproximityprompt(desc, 0) end)
+                    pcall(function() fireproximityprompt(desc, 1) end)
+                end
+            end
+            for _, desc in ipairs(targetChar:GetDescendants()) do
+                firePrompt(desc)
+            end
+            if player.Character then
+                for _, desc in ipairs(player.Character:GetDescendants()) do
+                    firePrompt(desc)
+                end
+            end
+            local ray = Ray.new(myHrp.Position, myHrp.CFrame.LookVector * 10)
+            local ignore = { player.Character }
+            if State.desyncVisualFolder then
+                table.insert(ignore, State.desyncVisualFolder)
+            end
+            local hit = Workspace:FindPartOnRayWithIgnoreList(ray, ignore)
+            if hit then
+                for _, desc in ipairs(hit:GetDescendants()) do
+                    firePrompt(desc)
+                end
+                local prompt = hit:FindFirstChildOfClass("ProximityPrompt")
+                if prompt then
+                    firePrompt(prompt)
+                end
+            end
+        end
+    end)
+
+    pcall(function()
+        if firetouchinterest then
+            local part = targetChar:FindFirstChild("Head") or targetChar:FindFirstChild("HumanoidRootPart")
+            if part then
+                firetouchinterest(myHrp, part, 0)
+                firetouchinterest(myHrp, part, 1)
+            end
+        end
+    end)
+
+    pcall(function()
+        if not getconnections then return end
+        for _, part in ipairs(targetChar:GetDescendants()) do
+            if part:IsA("BasePart") then
+                local cd = part:FindFirstChildOfClass("ClickDetector")
+                if cd then
+                    for _, conn in ipairs(getconnections(cd.MouseClick)) do
+                        conn:Fire()
+                    end
+                end
+            end
+        end
+    end)
+end
+
+local function stopAutowinHoldStep()
+    pcall(function()
+        RunService:UnbindFromRenderStep("NightFallAutowinHold")
+    end)
+    State.homelanderAutowinHoldActive = false
+    simulateKeyE(false)
+end
+
+local function waitForPlayerDeath(plr, timeoutSec)
+    local deadline = tick() + timeoutSec
+    while tick() < deadline and State.homelanderAutowinEnabled do
+        if not plr.Parent then
+            return true
+        end
+        local char = plr.Character
+        if not char then
+            return true
+        end
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if not hum or hum.Health <= 0 then
+            return true
+        end
+        task.wait(0.08)
+    end
+    return false
+end
+
+local function chokeKillPlayer(targetPlayer)
+    if not State.homelanderAutowinEnabled then
+        return false
+    end
+
+    local myHrp = getRoot()
+    local targetChar = targetPlayer.Character
+    local targetHrp = targetChar and targetChar:FindFirstChild("HumanoidRootPart")
+    if not myHrp or not targetHrp then
+        return false
+    end
+
+    pcall(function()
+        setsimulationradius(2e19, 2e19)
+        sethiddenproperty(player, "SimulationRadius", 2e19)
+        sethiddenproperty(player, "MaxSimulationRadius", 2e19)
+    end)
+
+    State.homelanderAutowinTarget = targetPlayer
+    State.homelanderAutowinLastE = 0
+
+    pcall(function()
+        RunService:BindToRenderStep("NightFallAutowinHold", Enum.RenderPriority.First.Value + 3, function()
+            if not State.homelanderAutowinEnabled
+                or State.homelanderAutowinTarget ~= targetPlayer then
+                stopAutowinHoldStep()
+                return
+            end
+
+            local hrp = getRoot()
+            local char = targetPlayer.Character
+            local thrp = char and char:FindFirstChild("HumanoidRootPart")
+            if not hrp or not thrp then
+                return
+            end
+
+            local behind = getBehindTargetCFrame(thrp)
+            if behind then
+                teleportHrpTo(hrp, behind)
+            end
+
+            local now = tick()
+            if now - (State.homelanderAutowinLastE or 0) >= AUTOWIN_E_INTERVAL then
+                State.homelanderAutowinLastE = now
+                simulateKeyEClick()
+                tryChokeInteract(hrp, char)
+            end
+        end)
+    end)
+    State.homelanderAutowinHoldActive = true
+
+    local died = waitForPlayerDeath(targetPlayer, AUTOWIN_MAX_TARGET_SEC)
+
+    stopAutowinHoldStep()
+    State.homelanderAutowinTarget = nil
+
+    if died then
+        print("[NightFall] Autowin killed " .. targetPlayer.Name)
+    else
+        warn("[NightFall] Autowin timed out on " .. targetPlayer.Name)
+    end
+
+    return died
+end
+
+local function homelanderAutowinLoop()
+    if State.homelanderAutowinRunning then
+        return
+    end
+    State.homelanderAutowinRunning = true
+
+    task.spawn(function()
+        while State.homelanderAutowinEnabled and State.isPremium do
+            local hrp = getRoot()
+            if not hrp then
+                task.wait(0.5)
+            else
+                local candidates = collectAutowinCandidates()
+                if #candidates == 0 then
+                    task.wait(1)
+                else
+                    for _, target in ipairs(candidates) do
+                        if not State.homelanderAutowinEnabled then
+                            break
+                        end
+                        if isAlivePlayer(target) then
+                            chokeKillPlayer(target)
+                            task.wait(AUTOWIN_BETWEEN_TARGETS)
+                        end
+                    end
+                end
+            end
+            task.wait(0.15)
+        end
+
+        stopAutowinHoldStep()
+        State.homelanderAutowinTarget = nil
+        State.homelanderAutowinRunning = false
+    end)
+end
+
+local function setHomelanderAutowin(enabled)
+    if enabled and not State.isPremium then
+        warn("[NightFall] Homelander Autowin requires premium.")
+        State.homelanderAutowinEnabled = false
+        if UI.HomelanderAutowinToggle then
+            setHubToggle(UI.HomelanderAutowinToggle, false)
+        end
+        return
+    end
+
+    if enabled and not isPlayerHomelander(player) then
+        warn("[NightFall] Autowin: you need the Homelander role to choke players.")
+    end
+
+    State.homelanderAutowinEnabled = enabled
+    if UI.HomelanderAutowinToggle then
+        setHubToggle(UI.HomelanderAutowinToggle, enabled)
+    end
+
+    if enabled then
+        homelanderAutowinLoop()
+    else
+        stopAutowinHoldStep()
+        State.homelanderAutowinTarget = nil
+        State.homelanderAutowinRunning = false
+    end
+end
+
+NF.F.setHomelanderAutowin = setHomelanderAutowin
+
+end -- scope block 1d-autowin (Homelander Autowin - Luau local register limit)
+
+do -- scope block 1c (spectate - Luau local register limit)
 
 local function clearSpectateConnections()
     for _, conn in ipairs(State.spectateConnections) do
@@ -5532,9 +5850,9 @@ NF.F.startSpectate = startSpectate
 NF.F.refreshMiscPlayerList = refreshMiscPlayerList
 NF.F.updateSpectateCamera = updateSpectateCamera
 
-end -- scope block 1c (spectate ? Luau local register limit)
+end -- scope block 1c (spectate - Luau local register limit)
 
-do -- scope block 1f (tempv ? Luau local register limit)
+do -- scope block 1f (tempv - Luau local register limit)
 
 local Scroll = UI.ScannerScroll
 local UIList = UI.ScannerUIList
@@ -5824,10 +6142,10 @@ NF.F.clearAllTempVHighlights = clearAllTempVHighlights
 NF.F.clearAllTempVBillboards = clearAllTempVBillboards
 NF.F.onTempVPickedUp = onTempVPickedUp
 
-end -- scope block 1f (tempv ? Luau local register limit)
+end -- scope block 1f (tempv - Luau local register limit)
 
 
-do -- scope block 2a (failsafe + freecam ? Luau local register limit)
+do -- scope block 2a (failsafe + freecam - Luau local register limit)
 local clearHighlight = F.clearHighlight
 local createPlayerESP = F.createPlayerESP
 local updateTempVESP = F.updateTempVESP
@@ -6124,9 +6442,9 @@ NF.F.setFreecam = setFreecam
 NF.F.updateFailsafe = updateFailsafe
 NF.F.teleportToSafeZone = teleportToSafeZone
 
-end -- scope block 2a (failsafe + freecam ? Luau local register limit)
+end -- scope block 2a (failsafe + freecam - Luau local register limit)
 
-do -- scope block 2b (blood manip ? Luau local register limit)
+do -- scope block 2b (blood manip - Luau local register limit)
 
 
 local Lighting = game:GetService("Lighting")
@@ -6426,10 +6744,36 @@ local function getBloodManipHeadTarget()
         if State.isMobile and State.holdingBloodManipKey and State.lastTouchScreenPos then
             return State.lastTouchScreenPos
         end
-        return UserInputService:GetMouseLocation()
+        local loc = UserInputService:GetMouseLocation()
+        local ok, inset = pcall(function() return GuiService:GetGuiInset() end)
+        if ok and inset then
+            return Vector2.new(loc.X, loc.Y - inset.Y)
+        end
+        return Vector2.new(loc.X, loc.Y)
     end
 
     local targetPlayer = nil
+
+    pcall(function()
+        local mouse = player:GetMouse()
+        if mouse and mouse.Target then
+            local hitPart = mouse.Target
+            if not (player.Character and hitPart:IsDescendantOf(player.Character)) then
+                if hitPart.Name == "Head" then
+                    targetPlayer = getPlayerFromCharacterPart(hitPart)
+                else
+                    local model = hitPart:FindFirstAncestorOfClass("Model")
+                    if model and model:FindFirstChild("Head") then
+                        targetPlayer = getPlayerFromCharacterPart(model.Head)
+                    end
+                end
+            end
+        end
+    end)
+
+    if targetPlayer and targetPlayer ~= player then
+        return targetPlayer
+    end
 
     pcall(function()
         local screenPos = getTargetScreenPos()
@@ -6439,8 +6783,16 @@ local function getBloodManipHeadTarget()
         params.FilterDescendantsInstances = filter
 
         local result = Workspace:Raycast(ray.Origin, ray.Direction * 250, params)
-        if result and result.Instance and result.Instance.Name == "Head" then
-            targetPlayer = getPlayerFromCharacterPart(result.Instance)
+        if result and result.Instance then
+            local hitPart = result.Instance
+            if hitPart.Name == "Head" then
+                targetPlayer = getPlayerFromCharacterPart(hitPart)
+            else
+                local model = hitPart:FindFirstAncestorOfClass("Model")
+                if model and model:FindFirstChild("Head") then
+                    targetPlayer = getPlayerFromCharacterPart(model.Head)
+                end
+            end
         end
     end)
 
@@ -6451,7 +6803,7 @@ local function getBloodManipHeadTarget()
     pcall(function()
         local screenPos = getTargetScreenPos()
         -- On mobile widen the snap radius so it's easy to tap near someone
-        local snapRadius = State.isMobile and 200 or 120
+        local snapRadius = State.isMobile and 200 or 160
         local closest, closestDist = nil, snapRadius
 
         for _, plr in pairs(Players:GetPlayers()) do
@@ -6610,6 +6962,10 @@ end
 local function updateBloodManipulator()
     if not State.bloodManipEnabled or State.bloodManipExecuting then return end
 
+    if not State.isMobile then
+        State.holdingBloodManipKey = UserInputService:IsKeyDown(Enum.KeyCode.E)
+    end
+
     if not State.holdingBloodManipKey then
         resetBloodManipState()
         return
@@ -6678,9 +7034,9 @@ NF.F.stopBloodManipEffectBlock = stopBloodManipEffectBlock
 NF.F.resetBloodManipState = resetBloodManipState
 NF.F.setRemoveBloodManipEffects = setRemoveBloodManipEffects
 
-end -- scope block 2b (blood manip ? Luau local register limit)
+end -- scope block 2b (blood manip - Luau local register limit)
 
-do -- scope block 2c (player esp ? Luau local register limit)
+do -- scope block 2c (player esp - Luau local register limit)
 
 local clearHighlight = F.clearHighlight
 local createPlayerESP = F.createPlayerESP
@@ -6784,9 +7140,9 @@ end
 NF.F.updatePlayerESP = updatePlayerESP
 NF.F.refreshPlayerESPScan = refreshPlayerESPScan
 
-end -- scope block 2c (player esp ? Luau local register limit)
+end -- scope block 2c (player esp - Luau local register limit)
 
-do -- scope block 2d (aimbot core ? Luau local register limit)
+do -- scope block 2d (aimbot core - Luau local register limit)
 
 local clearHighlight = F.clearHighlight
 local createPlayerESP = F.createPlayerESP
@@ -7694,11 +8050,11 @@ bindConnection(UserInputService.JumpRequest:Connect(function()
     local hrp = getRoot()
     if not humanoid or not hrp then return end
 
-    if State.jumpEnabled then
-        applyJumpStats(humanoid)
+    if State.jumpEnabled and NF.F.applyJumpStats then
+        NF.F.applyJumpStats(humanoid)
         task.defer(function()
-            if State.jumpEnabled then
-                applyJumpBoost(getRoot())
+            if State.jumpEnabled and NF.F.applyJumpBoost then
+                NF.F.applyJumpBoost(getRoot())
             end
         end)
     end
@@ -7730,6 +8086,10 @@ ejectScript = function()
     pcall(function() RunService:UnbindFromRenderStep("NightFallAimbot") end)
     pcall(function() RunService:UnbindFromRenderStep("NightFallAimbotFree") end)
     pcall(function() RunService:UnbindFromRenderStep("NightFallBloodManipHold") end)
+    pcall(function() RunService:UnbindFromRenderStep("NightFallAutowinHold") end)
+    if NF.F.setHomelanderAutowin then
+        pcall(NF.F.setHomelanderAutowin, false)
+    end
     if setAimbotShiftCursorLocked then
         pcall(setAimbotShiftCursorLocked, false)
     end
@@ -7766,14 +8126,6 @@ ejectScript = function()
     if UI.ToggleGui then UI.ToggleGui:Destroy() end
     if UI.MobileAimGui then UI.MobileAimGui:Destroy() end
 end
-
-bindHubClick(UI.CloseBtn, function()
-    if closeHubMenu then
-        closeHubMenu()
-    elseif setHubVisible then
-        setHubVisible(false)
-    end
-end)
 
 bindHubClick(UI.HomelanderESPToggle, function()
     State.homelanderESPEnabled = not State.homelanderESPEnabled
@@ -7982,6 +8334,9 @@ end))
 
 bindConnection(Players.PlayerAdded:Connect(function()
     refreshMiscPlayerList()
+    if State.homelanderESPEnabled or State.teamESPEnabled then
+        task.defer(refreshPlayerESPScan)
+    end
 end))
 
 bindConnection(Players.PlayerRemoving:Connect(function(leaving)
@@ -8046,13 +8401,14 @@ if type(NF.F.updateMovementHacks) ~= "function" or type(NF.F.updateTempVESP) ~= 
 end
 
 end -- scope block 2e (input + loops + wiring)
-print("[SurviveHomelander] Loaded - PC build 2026-05-27-PC-KEY-SYNC24")
+print("[SurviveHomelander] Loaded - PC build 2026-05-27-PC-KEY-SYNC27")
 if State.isMobile then
     print("[SurviveHomelander] Mobile touch: direct HitLayer Activated (single tap claim)")
 end
 print("[SurviveHomelander] Aimbot: Combat tab - PC hold RMB - Mobile tap LOCK ON")
 if State.isPremium then
     print("[SurviveHomelander] A-Train Kill: Premium tab - PC press Q - Mobile tap DASH")
+    print("[SurviveHomelander] Homelander Autowin: Premium tab - toggle ON as Homelander")
 else
     print("[SurviveHomelander] Premium locked - use a key from the NightFall hub or keyless mode")
 end
