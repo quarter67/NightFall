@@ -1,4 +1,4 @@
--- BUILD: 2026-05-27-MOBILE-TOUCH-FIX22-dev
+-- BUILD: 2026-05-27-MOBILE-TOUCH-FIX23-dev
 -- NightFall TEST BUILD (no key system)
 
 local NF = { State = {}, UI = {}, F = {}, COLORS = {}, CONST = {} }
@@ -721,10 +721,8 @@ local function bindHubClick(btn, fn)
     local lastFire = 0
     local function fire()
         local now = tick()
-        if now - lastFire < 0.2 then return end
-        if now - State.hubGlobalLastFireAt < 0.2 then return end
+        if now - lastFire < 0.18 then return end
         lastFire = now
-        State.hubGlobalLastFireAt = now
         task.defer(fn)
     end
 
@@ -736,6 +734,16 @@ local function bindHubClick(btn, fn)
 
     if useTouchRouter then
         ensureHubTouchRouter()
+        bindConnection(btn.Activated:Connect(fire))
+        pcall(function()
+            bindConnection(btn.TouchTap:Connect(fire))
+        end)
+        if hit then
+            bindConnection(hit.Activated:Connect(fire))
+            pcall(function()
+                bindConnection(hit.TouchTap:Connect(fire))
+            end)
+        end
         return
     end
 
