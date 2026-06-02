@@ -1,13 +1,13 @@
--- SurviveHomelanderPCkeyless
--- BUILD: 2026-05-27-PC-KEYLESS1
--- Keyless PC build — full hub, premium features disabled (no key required)
+-- SurviveHomelanderMobilekeyless
+-- BUILD: 2026-05-27-MOBILE-KEYLESS1
+-- Keyless mobile build — full hub, premium features disabled (no key required)
 
 if typeof(getgenv) == "function" then
-    pcall(function() getgenv().NF_FORCE_MOBILE = false end)
+    pcall(function() getgenv().NF_FORCE_MOBILE = true end)
 elseif typeof(shared) == "table" then
-    shared.NF_FORCE_MOBILE = false
+    shared.NF_FORCE_MOBILE = true
 else
-    _G.NF_FORCE_MOBILE = false
+    _G.NF_FORCE_MOBILE = true
 end
 
 local NF = { State = {}, UI = {}, F = {}, COLORS = {}, CONST = {} }
@@ -8378,7 +8378,7 @@ if type(NF.F.updateMovementHacks) ~= "function" or type(NF.F.updateTempVESP) ~= 
 end
 
 end -- scope block 2e (input + loops + wiring)
-print("[SurviveHomelander] Loaded - PC keyless build 2026-05-27-PC-KEYLESS1")
+print("[SurviveHomelander] Loaded - Mobile keyless build 2026-05-27-MOBILE-KEYLESS1")
 if State.isMobile then
     print("[SurviveHomelander] Mobile touch: direct HitLayer Activated (single tap claim)")
 end

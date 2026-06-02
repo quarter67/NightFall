@@ -115,7 +115,7 @@ end
 local GUI_PARENT = resolveGuiParent()
 
 local function dismissNightFallLoaderUi()
-    local targets = { "NightFallLoaderOverlay", "NightFallKeyUI", "NightFallPCKeyUI" }
+    local targets = { "NightFallLoaderOverlay", "NightFallKeyUI", "NightFallPCKeyUI", "NightFallLoaderUI" }
     local parents = {}
     if player then
         local pg = player:FindFirstChild("PlayerGui")

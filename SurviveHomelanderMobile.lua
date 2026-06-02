@@ -1,13 +1,13 @@
--- SurviveHomelanderPCkeyless
--- BUILD: 2026-05-27-PC-KEYLESS1
--- Keyless PC build — full hub, premium features disabled (no key required)
+-- SurviveHomelanderMobile
+-- BUILD: 2026-05-27-MOBILE-SYNC28
+-- Standalone mobile build (premium via loader key; keyless uses mobile keyless file)
 
 if typeof(getgenv) == "function" then
-    pcall(function() getgenv().NF_FORCE_MOBILE = false end)
+    pcall(function() getgenv().NF_FORCE_MOBILE = true end)
 elseif typeof(shared) == "table" then
-    shared.NF_FORCE_MOBILE = false
+    shared.NF_FORCE_MOBILE = true
 else
-    _G.NF_FORCE_MOBILE = false
+    _G.NF_FORCE_MOBILE = true
 end
 
 local NF = { State = {}, UI = {}, F = {}, COLORS = {}, CONST = {} }
@@ -17,13 +17,36 @@ local F = NF.F
 local COLORS = NF.COLORS
 local CONST = NF.CONST
 
+local function getLoaderEnv()
+    if typeof(getgenv) == "function" then
+        local ok, g = pcall(getgenv)
+        if ok and type(g) == "table" then
+            return g
+        end
+    end
+    if typeof(shared) == "table" then
+        return shared
+    end
+    return _G
+end
+
 local function resolveScriptAccess()
-    return false, true
+    if _G.NF_KEYLESS == true then
+        return false, true
+    end
+    local g = getLoaderEnv()
+    if g.NF_KEYLESS == true then
+        return false, true
+    end
+    if type(g.SCRIPT_KEY) == "string" and g.SCRIPT_KEY ~= "" then
+        return true, true
+    end
+    return false, false
 end
 
 local isPremium, allowRun = resolveScriptAccess()
 if not allowRun then
-    warn("[SurviveHomelander] Keyless build failed to start.")
+    warn("[SurviveHomelander] Run loader.lua to start NightFall (key or keyless).")
     return
 end
 
@@ -8378,7 +8401,7 @@ if type(NF.F.updateMovementHacks) ~= "function" or type(NF.F.updateTempVESP) ~= 
 end
 
 end -- scope block 2e (input + loops + wiring)
-print("[SurviveHomelander] Loaded - PC keyless build 2026-05-27-PC-KEYLESS1")
+print("[SurviveHomelander] Loaded - Mobile build 2026-05-27-MOBILE-SYNC28")
 if State.isMobile then
     print("[SurviveHomelander] Mobile touch: direct HitLayer Activated (single tap claim)")
 end
@@ -8387,7 +8410,7 @@ if State.isPremium then
     print("[SurviveHomelander] A-Train Kill: Premium tab - PC press Q - Mobile tap DASH")
     print("[SurviveHomelander] Homelander Autowin: Premium tab - toggle ON as Homelander")
 else
-    print("[SurviveHomelander] Keyless mode - premium features disabled")
+    print("[SurviveHomelander] Premium locked - use a key from the NightFall hub or keyless mode")
 end
 print("[SurviveHomelander] Drag the top bar to move - Cube toggles menu")
 print("[SurviveHomelander] Tabs: Scanner - Movement - Premium - Combat - Troll - Misc")
