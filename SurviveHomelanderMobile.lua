@@ -1,5 +1,5 @@
 -- SurviveHomelanderMobile
--- BUILD: 2026-05-27-MOBILE-SYNC29
+-- BUILD: 2026-05-27-MOBILE-SYNC30
 -- Standalone mobile build (premium via loader key; keyless uses mobile keyless file)
 
 if typeof(getgenv) == "function" then
@@ -2804,7 +2804,7 @@ end)
 UI.HomelanderAutowinToggle = createHubButton(
     PremiumList,
     "Homelander Autowin",
-    "Auto TP behind players and choke (E) until they die - needs Homelander role"
+    "Auto TP behind players and tap choke until they die - needs Homelander role"
 )
 setHubToggle(UI.HomelanderAutowinToggle, false)
 UI.HomelanderAutowinToggle.Visible = State.isPremium
@@ -5414,6 +5414,91 @@ local function collectAutowinCandidates()
     return candidates
 end
 
+local AUTOWIN_OUR_GUIS = {
+    ScriptHub = true,
+    ScriptHubToggle = true,
+    ScriptHubMobileAim = true,
+    ScriptHubFov = true,
+}
+
+local function autowinIsOurGui(obj)
+    if not obj then return false end
+    local gui = obj:IsA("ScreenGui") and obj or obj:FindFirstAncestorOfClass("ScreenGui")
+    if not gui then return false end
+    return AUTOWIN_OUR_GUIS[gui.Name] == true
+end
+
+local function getAutowinButtonText(obj)
+    if obj:IsA("TextButton") or obj:IsA("TextLabel") then
+        return obj.Text or ""
+    end
+    for _, child in ipairs(obj:GetDescendants()) do
+        if child:IsA("TextLabel") and child.Text and child.Text ~= "" then
+            return child.Text
+        end
+    end
+    return ""
+end
+
+local function looksLikeChokeButton(obj)
+    if not obj or autowinIsOurGui(obj) then return false end
+    if not (obj:IsA("TextButton") or obj:IsA("ImageButton")) then return false end
+    local text = getAutowinButtonText(obj):upper():gsub("%s+", "")
+    local name = obj.Name:upper()
+    if text == "DASH" or name:find("DASH", 1, true) then return false end
+    if text == "LOCKON" or text == "LOCKED" then return false end
+    return text == "CHOKE" or text == "GRIP" or text == "STRANGLE"
+        or name:find("CHOKE", 1, true) ~= nil
+        or name:find("GRIP", 1, true) ~= nil
+        or name:find("INTERACT", 1, true) ~= nil
+        or name:find("ABILITY", 1, true) ~= nil
+end
+
+local function fireGuiButton(btn)
+    if not btn or not btn:IsA("GuiButton") then return end
+    pcall(function()
+        if firesignal then
+            firesignal(btn.Activated)
+            if btn:IsA("TextButton") then
+                firesignal(btn.MouseButton1Click)
+            end
+            if btn.TouchTap then
+                firesignal(btn.TouchTap)
+            end
+        end
+    end)
+    pcall(function()
+        if not getconnections then return end
+        for _, conn in ipairs(getconnections(btn.Activated)) do
+            conn:Fire()
+        end
+        if btn:IsA("TextButton") then
+            for _, conn in ipairs(getconnections(btn.MouseButton1Click)) do
+                conn:Fire()
+            end
+        end
+        pcall(function()
+            for _, conn in ipairs(getconnections(btn.TouchTap)) do
+                conn:Fire()
+            end
+        end)
+    end)
+end
+
+local function pressMobileChokeButton()
+    local pg = player:FindFirstChild("PlayerGui")
+    if not pg then return false end
+
+    local fired = false
+    for _, desc in ipairs(pg:GetDescendants()) do
+        if looksLikeChokeButton(desc) then
+            fireGuiButton(desc)
+            fired = true
+        end
+    end
+    return fired
+end
+
 local function simulateKeyE(down)
     pcall(function()
         if VirtualInputManager and VirtualInputManager.SendKeyEvent then
@@ -5491,12 +5576,24 @@ local function tryChokeInteract(myHrp, targetChar)
     end)
 end
 
+local function triggerAutowinChoke(myHrp, targetChar)
+    if State.isMobile then
+        pressMobileChokeButton()
+        tryChokeInteract(myHrp, targetChar)
+    else
+        simulateKeyEClick()
+        tryChokeInteract(myHrp, targetChar)
+    end
+end
+
 local function stopAutowinHoldStep()
     pcall(function()
         RunService:UnbindFromRenderStep("NightFallAutowinHold")
     end)
     State.homelanderAutowinHoldActive = false
-    simulateKeyE(false)
+    if not State.isMobile then
+        simulateKeyE(false)
+    end
 end
 
 local function waitForPlayerDeath(plr, timeoutSec)
@@ -5562,8 +5659,7 @@ local function chokeKillPlayer(targetPlayer)
             local now = tick()
             if now - (State.homelanderAutowinLastE or 0) >= AUTOWIN_E_INTERVAL then
                 State.homelanderAutowinLastE = now
-                simulateKeyEClick()
-                tryChokeInteract(hrp, char)
+                triggerAutowinChoke(hrp, char)
             end
         end)
     end)
@@ -8450,7 +8546,7 @@ if type(NF.F.updateMovementHacks) ~= "function" or type(NF.F.updateTempVESP) ~= 
 end
 
 end -- scope block 2e (input + loops + wiring)
-print("[SurviveHomelander] Loaded - Mobile build 2026-05-27-MOBILE-SYNC29")
+print("[SurviveHomelander] Loaded - Mobile build 2026-05-27-MOBILE-SYNC30")
 if State.isMobile then
     print("[SurviveHomelander] Mobile touch: direct HitLayer Activated (single tap claim)")
 end
