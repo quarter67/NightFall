@@ -1,5 +1,5 @@
 -- SurviveHomelanderMobilekeyless
--- BUILD: 2026-05-27-MOBILE-KEYLESS1
+-- BUILD: 2026-05-27-MOBILE-KEYLESS2
 -- Keyless mobile build — full hub, premium features disabled (no key required)
 
 if typeof(getgenv) == "function" then
@@ -161,24 +161,39 @@ local function restoreAimbotCamera()
     local cam = refreshCamera()
     if not cam then return end
     pcall(function()
-        local needsSubject = cam.CameraType == Enum.CameraType.Scriptable
-            or State.aimbotSavedCameraType ~= nil
-        if State.aimbotSavedCameraType then
-            cam.CameraType = State.aimbotSavedCameraType
-        elseif cam.CameraType == Enum.CameraType.Scriptable then
+        local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+
+        if State.isMobile then
             cam.CameraType = Enum.CameraType.Custom
-        end
-        if needsSubject then
-            local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
             if hum then
                 cam.CameraSubject = hum
+                hum.AutoRotate = true
             end
-        end
-        if State.isMobile then
-            pcall(function()
-                player.CameraMinZoomDistance = State.cameraSavedMinZoom or 0.5
-                player.CameraMaxZoomDistance = State.cameraSavedMaxZoom or 400
-            end)
+            local minZoom = State.aimbotSavedMinZoom
+            local maxZoom = State.aimbotSavedMaxZoom
+            if minZoom then
+                player.CameraMinZoomDistance = minZoom
+            end
+            if maxZoom then
+                player.CameraMaxZoomDistance = maxZoom
+            end
+            if player.CameraMaxZoomDistance < player.CameraMinZoomDistance + 0.5 then
+                player.CameraMaxZoomDistance = player.CameraMinZoomDistance + 5
+            end
+            State.aimbotMobileCamSaved = false
+            State.aimbotSavedMinZoom = nil
+            State.aimbotSavedMaxZoom = nil
+        else
+            local needsSubject = cam.CameraType == Enum.CameraType.Scriptable
+                or State.aimbotSavedCameraType ~= nil
+            if State.aimbotSavedCameraType then
+                cam.CameraType = State.aimbotSavedCameraType
+            elseif cam.CameraType == Enum.CameraType.Scriptable then
+                cam.CameraType = Enum.CameraType.Custom
+            end
+            if needsSubject and hum then
+                cam.CameraSubject = hum
+            end
         end
     end)
     State.aimbotSavedCameraType = nil
@@ -422,6 +437,9 @@ State.holdingRightClick = false
 State.holdingMobileAim = false
 State.mobileAimCamFlatDist = nil
 State.mobileAimCamHeight = nil
+State.aimbotSavedMinZoom = nil
+State.aimbotSavedMaxZoom = nil
+State.aimbotMobileCamSaved = false
 State.shiftLockActive = false
 State.shiftLockSuppressed = false
 State.nfOwnsShiftLockCursor = false
@@ -1591,11 +1609,15 @@ bindConnection(UI.MobileAimBtn.InputEnded:Connect(function(input)
             tween(UI.MobileAimBtn, { BackgroundColor3 = COLORS.success })
             UI.MobileAimBtn.Text = "LOCKED"
         else
-            State.aimbotLockedTarget = nil
-            State.aimbotLockedHead = nil
-            State.aimbotLockExpired = false
-            clearMobileAimCameraSnapshot()
-            restoreAimbotCamera()
+            if NF.F.clearAimbotLock then
+                NF.F.clearAimbotLock()
+            else
+                State.aimbotLockedTarget = nil
+                State.aimbotLockedHead = nil
+                State.aimbotLockExpired = false
+                clearMobileAimCameraSnapshot()
+                restoreAimbotCamera()
+            end
             tween(UI.MobileAimBtn, { BackgroundColor3 = COLORS.accent })
             UI.MobileAimBtn.Text = "LOCK ON"
         end
@@ -7447,12 +7469,17 @@ local function clearAimbotLock()
     State.aimbotHeadLostAt = nil
     clearPcAimCursor()
     clearMobileAimCameraSnapshot()
-    if NF.F.ensureGameplayCamera then
+    if State.isMobile then
+        restoreAimbotCamera()
+        if NF.F.ensureMobileGameplay then
+            task.defer(NF.F.ensureMobileGameplay)
+        end
+    elseif NF.F.ensureGameplayCamera then
         NF.F.ensureGameplayCamera()
     else
         restoreAimbotCamera()
     end
-    if camera and camera.CameraType == Enum.CameraType.Scriptable then
+    if not State.isMobile and camera and camera.CameraType == Enum.CameraType.Scriptable then
         pcall(function() camera.CameraType = Enum.CameraType.Custom end)
         State.aimbotSavedCameraType = nil
     end
@@ -7512,12 +7539,23 @@ local function aimCameraAtWorldPos(part, dt)
     return pcall(function()
         local charFocus = hrp.Position + Vector3.new(0, 2, 0)
 
+        if State.isMobile and not State.aimbotMobileCamSaved then
+            State.aimbotMobileCamSaved = true
+            State.aimbotSavedMinZoom = player.CameraMinZoomDistance
+            State.aimbotSavedMaxZoom = player.CameraMaxZoomDistance
+        end
+
         if not State.mobileAimCamFlatDist then
             local offset = cam.CFrame.Position - charFocus
             local flat = Vector3.new(offset.X, 0, offset.Z)
             local flatDist = flat.Magnitude
-            State.mobileAimCamFlatDist = math.clamp(flatDist > 1 and flatDist or 12, 8, 22)
-            State.mobileAimCamHeight = math.clamp(offset.Y, 1, 4)
+            local minZoom = State.aimbotSavedMinZoom or player.CameraMinZoomDistance
+            local maxZoom = State.aimbotSavedMaxZoom or player.CameraMaxZoomDistance
+            if flatDist < 1 then
+                flatDist = math.clamp((minZoom + maxZoom) * 0.5, minZoom + 1, maxZoom)
+            end
+            State.mobileAimCamFlatDist = math.clamp(flatDist, minZoom + 0.5, maxZoom)
+            State.mobileAimCamHeight = math.clamp(offset.Y, 0.5, 6)
         end
 
         local camDist = State.mobileAimCamFlatDist
@@ -7998,6 +8036,17 @@ pcall(function()
 end)
 
 bindConnection(RunService.RenderStepped:Connect(function(dt)
+    if State.isMobile and not State.holdingMobileAim
+        and not State.freecamEnabled and not State.spectating and not State.ejected then
+        local cam = Workspace.CurrentCamera
+        if cam and cam.CameraType == Enum.CameraType.Scriptable then
+            restoreAimbotCamera()
+            if ensureMobileGameplay then
+                ensureMobileGameplay()
+            end
+        end
+    end
+
     if not State.isMobile then
         if State.shiftLockActive and maintainPcShiftLockCursor then
             maintainPcShiftLockCursor()
@@ -8378,7 +8427,7 @@ if type(NF.F.updateMovementHacks) ~= "function" or type(NF.F.updateTempVESP) ~= 
 end
 
 end -- scope block 2e (input + loops + wiring)
-print("[SurviveHomelander] Loaded - Mobile keyless build 2026-05-27-MOBILE-KEYLESS1")
+print("[SurviveHomelander] Loaded - Mobile keyless build 2026-05-27-MOBILE-KEYLESS2")
 if State.isMobile then
     print("[SurviveHomelander] Mobile touch: direct HitLayer Activated (single tap claim)")
 end
