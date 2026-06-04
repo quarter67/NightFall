@@ -1,5 +1,5 @@
 -- SurviveHomelanderPC
--- BUILD: 2026-05-27-PC-KEY-SYNC28
+-- BUILD: 2026-06-04-PC-AIM-FIX1
 -- Standalone PC build (premium via loader key; keyless if NF_KEYLESS is set)
 
 if typeof(getgenv) == "function" then
@@ -396,13 +396,36 @@ local function maintainPcShiftLockCursor()
         releaseScriptShiftLockCursor()
         return
     end
-    if isRobloxCameraDragging() then
-        return
-    end
     if State.shiftLockActive then
-        setAimbotShiftCursorLocked(true)
+        -- Re-pin center cursor during shift-lock aim (RMB sets LockCurrentPosition).
+        if State.aimbotEnabled and isAimHoldActive() then
+            setAimbotShiftCursorLocked(true)
+        elseif not isRobloxCameraDragging() then
+            setAimbotShiftCursorLocked(true)
+        end
     else
         releaseScriptShiftLockCursor()
+    end
+end
+
+local function setMobileAimShiftLock(locked)
+    if not State.isMobile then return end
+    if locked then
+        pcall(function()
+            UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
+            UserInputService.MouseIconEnabled = false
+            State.nfMobileShiftLock = true
+        end)
+        local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+        if hum then
+            pcall(function() hum.AutoRotate = true end)
+        end
+    elseif State.nfMobileShiftLock then
+        State.nfMobileShiftLock = false
+        pcall(function()
+            UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+            UserInputService.MouseIconEnabled = true
+        end)
     end
 end
 
@@ -449,6 +472,7 @@ State.shiftLockActive = false
 State.shiftLockSuppressed = false
 State.nfOwnsShiftLockCursor = false
 State.shiftLockAutoSynced = false
+State.nfMobileShiftLock = false
 State.mobileAimDragUnlocked = false
 State.trackedConnections = {}
 State.hubSliderDrag = nil
@@ -1611,14 +1635,24 @@ bindConnection(UI.MobileAimBtn.InputEnded:Connect(function(input)
         if State.holdingMobileAim then
             State.mobileAimCamFlatDist = nil
             State.mobileAimCamHeight = nil
+            if NF.F.setMobileAimShiftLock then
+                NF.F.setMobileAimShiftLock(true)
+            end
             tween(UI.MobileAimBtn, { BackgroundColor3 = COLORS.success })
             UI.MobileAimBtn.Text = "LOCKED"
         else
-            State.aimbotLockedTarget = nil
-            State.aimbotLockedHead = nil
-            State.aimbotLockExpired = false
-            clearMobileAimCameraSnapshot()
-            restoreAimbotCamera()
+            if NF.F.clearAimbotLock then
+                NF.F.clearAimbotLock()
+            else
+                State.aimbotLockedTarget = nil
+                State.aimbotLockedHead = nil
+                State.aimbotLockExpired = false
+                clearMobileAimCameraSnapshot()
+                restoreAimbotCamera()
+            end
+            if NF.F.setMobileAimShiftLock then
+                NF.F.setMobileAimShiftLock(false)
+            end
             tween(UI.MobileAimBtn, { BackgroundColor3 = COLORS.accent })
             UI.MobileAimBtn.Text = "LOCK ON"
         end
@@ -2418,6 +2452,7 @@ NF.F.getAimReferenceUsesCenter = getAimReferenceUsesCenter
 NF.F.syncPcAimHoldState = syncPcAimHoldState
 NF.F.ensurePcAimMouseFree = ensurePcAimMouseFree
 NF.F.setAimbotShiftCursorLocked = setAimbotShiftCursorLocked
+NF.F.setMobileAimShiftLock = setMobileAimShiftLock
 NF.F.maintainPcShiftLockCursor = maintainPcShiftLockCursor
 NF.F.getShiftLockAimScreen = getShiftLockAimScreen
 NF.F.syncPcAimCursorFromSystem = syncPcAimCursorFromSystem
@@ -2908,6 +2943,12 @@ end)
 UI.FlingSelfBtn = createHubButton(TrollList, "Fling Self", "Launch yourself into the air")
 bindHubClick(UI.FlingSelfBtn, function()
     if NF.F.flingSelf then NF.F.flingSelf() end
+end)
+
+UI.FlingAllBtn = createHubButton(TrollList, "Fling All", "Premium: SkidFling every other player")
+UI.FlingAllBtn.Visible = State.isPremium
+bindHubClick(UI.FlingAllBtn, function()
+    if NF.F.flingAllPlayers then task.spawn(NF.F.flingAllPlayers) end
 end)
 
 UI.TpRandomBtn = createHubButton(TrollList, "TP To Random Player", "Teleport to a random player")
@@ -5048,6 +5089,25 @@ local function flingHomelander()
     skidFlingPlayer(homelander)
 end
 
+local function flingAllPlayers()
+    if not State.isPremium then
+        warn("[NightFall] Fling All is premium only.")
+        return
+    end
+    task.spawn(function()
+        for _, plr in ipairs(Players:GetPlayers()) do
+            if plr ~= player and plr.Character then
+                while State.flingInProgress do
+                    task.wait(0.15)
+                end
+                skidFlingPlayer(plr)
+                task.wait(0.35)
+            end
+        end
+        print("[NightFall] Fling All finished.")
+    end)
+end
+
 local function updateSpin(dt)
     if State.bloodManipExecuting then return end
     if not State.spinEnabled then return end
@@ -5112,6 +5172,7 @@ end
 
 NF.F.updateSpin = updateSpin
 NF.F.flingHomelander = flingHomelander
+NF.F.flingAllPlayers = flingAllPlayers
 NF.F.skidFlingPlayer = skidFlingPlayer
 NF.F.flingSelf = flingSelf
 NF.F.tpRandomPlayer = tpRandomPlayer
@@ -7221,10 +7282,12 @@ local function ensureMobileGameplay()
 
     pcall(function() GuiService.TouchControlsEnabled = true end)
     enableRobloxMovementControls()
-    pcall(function()
-        UserInputService.MouseBehavior = Enum.MouseBehavior.Default
-        UserInputService.MouseIconEnabled = true
-    end)
+    if not State.holdingMobileAim then
+        pcall(function()
+            UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+            UserInputService.MouseIconEnabled = true
+        end)
+    end
 
     if State.WindowDrag then
         State.WindowDrag.active = false
@@ -7276,6 +7339,7 @@ NF.F.ensureMobileGameplay = ensureMobileGameplay
 local function ensureNativePcCamera()
     if State.isMobile or State.ejected then return end
     if State.freecamEnabled or State.spectating then return end
+    if State.aimbotEnabled and isAimHoldActive() then return end
     if NF.F.cameraNeedsAimbotRestore and NF.F.cameraNeedsAimbotRestore() then return end
     local cam = Workspace.CurrentCamera
     local hum = getHumanoid()
@@ -7470,6 +7534,9 @@ local function clearAimbotLock()
     State.aimbotHeadLostAt = nil
     clearPcAimCursor()
     clearMobileAimCameraSnapshot()
+    if NF.F.setMobileAimShiftLock then
+        NF.F.setMobileAimShiftLock(false)
+    end
     if NF.F.ensureGameplayCamera then
         NF.F.ensureGameplayCamera()
     else
@@ -7567,6 +7634,16 @@ local function aimCameraAtWorldPos(part, dt)
         end
 
         cam.CFrame = (delayMs <= 0 or alpha >= 0.99) and desiredCF or cam.CFrame:Lerp(desiredCF, alpha)
+
+        if State.isMobile and flat.Magnitude > 0.05 then
+            local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+            if hum and hum.Health > 0 then
+                pcall(function() hum.AutoRotate = true end)
+            end
+            local yawCF = CFrame.new(hrp.Position, hrp.Position + flat.Unit)
+            local _, yaw = yawCF:ToEulerAnglesYXZ()
+            hrp.CFrame = CFrame.new(hrp.Position) * CFrame.Angles(0, yaw, 0)
+        end
     end)
 end
 
@@ -7607,7 +7684,11 @@ local function aimMouseAtHead(part, _useCenter, dt)
     if State.isMobile then
         return aimCameraAtWorldPos(part, dt)
     end
-    return aimPc(part, dt)
+    if aimPc(part, dt) then
+        return true
+    end
+    -- mousemoverel is blocked in most Roblox games/executors; orbit camera instead.
+    return aimCameraAtWorldPos(part, dt)
 end
 
 return clearAimbotLock, updateAimbotLock, aimMouseAtHead
@@ -7996,6 +8077,10 @@ NF.F.runAimbotStep = function(dt)
 
     syncPcAimHoldState()
 
+    if State.isMobile and NF.F.setMobileAimShiftLock then
+        NF.F.setMobileAimShiftLock(isAimHoldActive())
+    end
+
     if not isAimHoldActive() then
         releaseShiftAimCursor()
         if State.aimbotLockedTarget or State.aimbotLockedHead
@@ -8169,6 +8254,9 @@ bindHubClick(UI.AimbotToggle, function()
     if not State.aimbotEnabled then
         clearAimbotLock()
         State.holdingMobileAim = false
+        if NF.F.setMobileAimShiftLock then
+            NF.F.setMobileAimShiftLock(false)
+        end
         restoreAimbotCamera()
         if UI.MobileAimBtn and not State.mobileAimDragUnlocked then
             UI.MobileAimBtn.Text = "LOCK ON"
@@ -8401,7 +8489,7 @@ if type(NF.F.updateMovementHacks) ~= "function" or type(NF.F.updateTempVESP) ~= 
 end
 
 end -- scope block 2e (input + loops + wiring)
-print("[SurviveHomelander] Loaded - PC build 2026-05-27-PC-KEY-SYNC28")
+print("[SurviveHomelander] Loaded - PC build 2026-06-04-PC-AIM-FIX1")
 if State.isMobile then
     print("[SurviveHomelander] Mobile touch: direct HitLayer Activated (single tap claim)")
 end
