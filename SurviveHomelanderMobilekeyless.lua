@@ -1,5 +1,5 @@
 -- SurviveHomelanderMobilekeyless
--- BUILD: 2026-06-04-MOBILE-KEYLESS-AIM1
+-- BUILD: 2026-06-04-MOBILE-KEYLESS-UI2
 -- Keyless mobile build — full hub, premium features disabled (no key required)
 
 if typeof(getgenv) == "function" then
@@ -786,29 +786,65 @@ local aimCursorCorner = Instance.new("UICorner")
 aimCursorCorner.CornerRadius = UDim.new(1, 0)
 aimCursorCorner.Parent = UI.AimCursor
 
--- Default: center of the screen (button is 90x90, so offset by -45)
-local DEFAULT_AIM_POS = UDim2.new(0.5, -45, 0.5, -45)
+local MOBILE_AIM_BTN_PX = 90
+
+local function getDefaultAimButtonPos()
+    if State.isMobile then
+        local cam = Workspace.CurrentCamera
+        if cam then
+            local vp = cam.ViewportSize
+            if vp.X > 0 and vp.Y > 0 then
+                local inset = GuiService:GetGuiInset()
+                local right = vp.X - inset.X
+                local bottom = vp.Y - inset.Y
+                local doorCenterX = right - 115
+                local doorTopY = bottom - 180
+                local gap = 10
+                local x = math.floor(doorCenterX - MOBILE_AIM_BTN_PX / 2)
+                local y = math.floor(doorTopY - gap - MOBILE_AIM_BTN_PX)
+                return UDim2.new(0, math.max(8, x), 0, math.max(8, y))
+            end
+        end
+        return UDim2.new(1, -102, 1, -215)
+    end
+    return UDim2.new(0.5, -math.floor(MOBILE_AIM_BTN_PX / 2), 0.5, -math.floor(MOBILE_AIM_BTN_PX / 2))
+end
+
+local function isPlausibleAimButtonPos(pos)
+    if not pos then return false end
+    if State.isMobile and pos.X.Scale == 0.5 and pos.Y.Scale == 0.5 then
+        return false
+    end
+    local cam = Workspace.CurrentCamera
+    if not cam then return true end
+    local vp = cam.ViewportSize
+    local x = pos.X.Offset + pos.X.Scale * vp.X
+    local y = pos.Y.Offset + pos.Y.Scale * vp.Y
+    return x >= -10 and y >= -10 and x <= vp.X - 40 and y <= vp.Y - 40
+end
 
 local function loadAimButtonPos()
     local data = fsRead(CONST.AIM_POS_PATH)
     if data then
-        -- New format: "xs,xo,ys,yo" (Scale + Offset for both axes)
         local xs, xo, ys, yo = data:match("([^,]+),([^,]+),([^,]+),([^,]+)")
         if xs and xo and ys and yo then
-            return UDim2.new(tonumber(xs), tonumber(xo), tonumber(ys), tonumber(yo))
+            local pos = UDim2.new(tonumber(xs), tonumber(xo), tonumber(ys), tonumber(yo))
+            if isPlausibleAimButtonPos(pos) then
+                return pos
+            end
         end
-        -- Old 2-value format saved Offset only and dropped Scale, which left old
-        -- bottom-right defaults rendering at literal pixel (-96, -120) (off-screen).
-        -- Discard such entries and fall through to the default.
         local x, y = data:match("([^,]+),([^,]+)")
         if x and y then
             local nx, ny = tonumber(x), tonumber(y)
             if nx and ny and nx >= 0 and ny >= 0 then
-                return UDim2.new(0, nx, 0, ny)
+                local pos = UDim2.new(0, nx, 0, ny)
+                if isPlausibleAimButtonPos(pos) then
+                    return pos
+                end
             end
         end
     end
-    return DEFAULT_AIM_POS
+    return getDefaultAimButtonPos()
 end
 
 local function saveAimButtonPos(pos)
@@ -2822,6 +2858,12 @@ bindHubClick(UI.HomelanderAutowinToggle, function()
     end
 end)
 
+UI.FlingAllBtn = createHubButton(PremiumList, "Fling All", "SkidFling every other player in the lobby")
+UI.FlingAllBtn.Visible = State.isPremium
+bindHubClick(UI.FlingAllBtn, function()
+    if NF.F.flingAllPlayers then task.spawn(NF.F.flingAllPlayers) end
+end)
+
 local CombatScroll = Instance.new("ScrollingFrame")
 CombatScroll.Size = UDim2.new(1, 0, 1, 0)
 CombatScroll.BackgroundTransparency = 1
@@ -2938,12 +2980,6 @@ end)
 UI.FlingSelfBtn = createHubButton(TrollList, "Fling Self", "Launch yourself into the air")
 bindHubClick(UI.FlingSelfBtn, function()
     if NF.F.flingSelf then NF.F.flingSelf() end
-end)
-
-UI.FlingAllBtn = createHubButton(TrollList, "Fling All", "Premium: SkidFling every other player")
-UI.FlingAllBtn.Visible = State.isPremium
-bindHubClick(UI.FlingAllBtn, function()
-    if NF.F.flingAllPlayers then task.spawn(NF.F.flingAllPlayers) end
 end)
 
 UI.TpRandomBtn = createHubButton(TrollList, "TP To Random Player", "Teleport to a random player")
@@ -8607,7 +8643,7 @@ if type(NF.F.updateMovementHacks) ~= "function" or type(NF.F.updateTempVESP) ~= 
 end
 
 end -- scope block 2e (input + loops + wiring)
-print("[SurviveHomelander] Loaded - Mobile keyless build 2026-06-04-MOBILE-KEYLESS-AIM1")
+print("[SurviveHomelander] Loaded - Mobile keyless build 2026-06-04-MOBILE-KEYLESS-UI2")
 if State.isMobile then
     print("[SurviveHomelander] Mobile touch: direct HitLayer Activated (single tap claim)")
 end

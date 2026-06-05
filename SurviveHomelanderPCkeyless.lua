@@ -2804,6 +2804,12 @@ bindHubClick(UI.HomelanderAutowinToggle, function()
     end
 end)
 
+UI.FlingAllBtn = createHubButton(PremiumList, "Fling All", "SkidFling every other player in the lobby")
+UI.FlingAllBtn.Visible = State.isPremium
+bindHubClick(UI.FlingAllBtn, function()
+    if NF.F.flingAllPlayers then task.spawn(NF.F.flingAllPlayers) end
+end)
+
 local CombatScroll = Instance.new("ScrollingFrame")
 CombatScroll.Size = UDim2.new(1, 0, 1, 0)
 CombatScroll.BackgroundTransparency = 1
@@ -2920,12 +2926,6 @@ end)
 UI.FlingSelfBtn = createHubButton(TrollList, "Fling Self", "Launch yourself into the air")
 bindHubClick(UI.FlingSelfBtn, function()
     if NF.F.flingSelf then NF.F.flingSelf() end
-end)
-
-UI.FlingAllBtn = createHubButton(TrollList, "Fling All", "Premium: SkidFling every other player")
-UI.FlingAllBtn.Visible = State.isPremium
-bindHubClick(UI.FlingAllBtn, function()
-    if NF.F.flingAllPlayers then task.spawn(NF.F.flingAllPlayers) end
 end)
 
 UI.TpRandomBtn = createHubButton(TrollList, "TP To Random Player", "Teleport to a random player")
